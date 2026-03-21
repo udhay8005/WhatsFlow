@@ -4,7 +4,7 @@
  *              Writes structured JSON logs to error.log and combined.log.
  * @module backend/utils/logger
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const winston = require('winston');

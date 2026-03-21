@@ -6,7 +6,7 @@
  *              breakdown for charts and reporting.
  * @module backend/routes/stats
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const express = require('express');

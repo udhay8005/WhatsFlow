@@ -5,7 +5,7 @@
  *              the renderer via contextBridge to avoid direct Node.js access.
  * @module electron/preload
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const { contextBridge, ipcRenderer } = require('electron');

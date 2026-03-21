@@ -5,7 +5,7 @@
  *              and optional scheduled send date/time.
  * @module components/campaign/CampaignDetailsStep
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -15,9 +15,9 @@ export default function CampaignDetailsStep({
     campaignName, setCampaignName,
     templateId, setTemplateId,
     templates, loadingTemplates,
-    mediaFile, setMediaFile,
+    setMediaFile,
     mediaPreview, setMediaPreview,
-    mediaId, setMediaId,
+    setMediaId,
     mediaType, setMediaType,
     uploadingMedia, handleMediaUpload,
     onNext,

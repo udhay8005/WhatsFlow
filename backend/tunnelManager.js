@@ -5,7 +5,7 @@
  *              Manages tunnel lifecycle: start, stop, and URL retrieval.
  * @module backend/tunnelManager
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const localtunnel = require('localtunnel');

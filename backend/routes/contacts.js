@@ -5,7 +5,7 @@
  *              eligibility checks (blacklist + 24-hour frequency guard).
  * @module backend/routes/contacts
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const express = require('express');

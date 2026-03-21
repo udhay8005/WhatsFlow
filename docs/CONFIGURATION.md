@@ -1,6 +1,8 @@
 # WhatsFlow - Configuration Reference
 
-**Version:** 1.0.0  
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
 **Purpose:** Complete reference for all configuration options
 
 ---
@@ -404,9 +406,7 @@ crypto.timingSafeEqual(
 
 ### Path
 
-**Production:** `./database.sqlite`  
-**Test:** `./database.test.sqlite`  
-**Location:** Project root directory
+**Location:** `./database.sqlite` (project root in dev; app data directory in installed app)
 
 **Change path:**
 ```javascript
@@ -447,23 +447,15 @@ CREATE INDEX idx_campaigns_status ON campaigns(status);
 
 ---
 
-### Backup Configuration
+### Manual Backup
+Copy `database.sqlite` while the app is **not running** (to avoid copying mid-write WAL state).
 
-**Manual Backup:**
 ```powershell
-# Run provided batch script
-.\BACKUP_DATABASE.bat
-
-# Output: backups/database_YYYYMMDD_HHMMSS.sqlite
+# Stop the app first, then:
+Copy-Item database.sqlite "database_backup_$(Get-Date -Format 'yyyyMMdd').sqlite"
 ```
 
-**Automated Backup (Windows Task Scheduler):**
-1. Open Task Scheduler
-2. Create Basic Task
-3. Trigger: Daily at 2:00 AM
-4. Action: Start a program
-5. Program: `D:\Udhay\whatspp\BACKUP_DATABASE.bat`
-6. Save
+> **Note:** The `BACKUP_DATABASE.bat` script in the project root can also be used for automated backups via Windows Task Scheduler.
 
 ---
 
@@ -481,8 +473,7 @@ CREATE INDEX idx_campaigns_status ON campaigns(status);
 - [ ] Worker TPS set appropriately (start with 5-10)
 - [ ] Webhook URL configured in Meta
 - [ ] Webhook verified successfully
-- [ ] Test campaign sent successfully
-- [ ] Database backup scheduled
+- [ ] Test campaign sent successfully to verify end-to-end flow
 
 ### Security Checklist
 

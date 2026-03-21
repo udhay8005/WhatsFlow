@@ -6,7 +6,7 @@
  *              and an asyncHandler wrapper for async route functions.
  * @module backend/middleware/errorHandler
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 // Standardized error response middleware

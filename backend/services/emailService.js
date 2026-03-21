@@ -5,7 +5,7 @@
  *              SMTP credentials are decrypted from the database at send time.
  * @module backend/services/emailService
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const nodemailer = require('nodemailer');

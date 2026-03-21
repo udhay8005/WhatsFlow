@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# ─── WhatsFlow — Commit Message Hook ─────────────────────────
+# Enforces Conventional Commits format via commitlint.
+# Author: Udhaya Chandra SA
+#
+# Valid formats:
+#   feat: add contact pagination
+#   fix(campaigns): handle empty recipients list
+#   chore!: drop Node 18 support (BREAKING CHANGE)
+
+npx --no -- commitlint --edit "$1"

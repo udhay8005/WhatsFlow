@@ -1,67 +1,121 @@
 # WhatsFlow - Deployment Guide
 
-## 📦 Build for Production
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
 
-WhatsFlow is built on **Electron**, **React**, and **Node.js**.
+---
+
+## Using the Pre-built Installer
+
+The easiest way to deploy WhatsFlow is using the pre-built installer from the `dist/` folder.
+
+### Files in `dist/`
+- `WhatsFlow 1.0.1.exe` — Portable executable (no install needed)
+- `WhatsFlow Setup 1.0.1.exe` — Installer (creates desktop & Start Menu shortcuts)
+
+**Recommended:** Use `WhatsFlow Setup 1.0.1.exe` for a proper installation.
+
+---
+
+## Building from Source
 
 ### Prerequisites
 - Node.js v18+
-- NPM v9+
-- Git
+- npm v9+
 
-### 1. Build Frontend
-The React frontend must be compiled to static assets first.
-```bash
-cd frontend
+### Step 1: Install Dependencies
+```powershell
 npm install
+```
+
+### Step 2: Build the App (Single Command)
+```powershell
 npm run build
 ```
-This generates the `frontend/dist` folder.
 
-### 2. Build Electron App
-Return to the root directory and create the executable.
-```bash
-# Install root dependencies
-npm install
+This command:
+1. Compiles the React frontend -> `frontend/dist/`
+2. Rebuilds native SQLite module for Electron
+3. Packages everything into `dist/WhatsFlow Setup 1.0.1.exe` and `dist/WhatsFlow 1.0.1.exe`
 
-# Build installer (Windows .exe)
-npm run build
+> **Note:** `asar` is disabled (`"asar": false` in package.json) to ensure `express.static()` can correctly serve the frontend files from the filesystem.
+
+### Build Configuration (`package.json`)
+```json
+{
+  "build": {
+    "appId": "com.whatsflow.app",
+    "productName": "WhatsFlow",
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["portable", "nsis"],
+      "icon": "frontend/public/logo.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
 ```
-The output will be in the `dist/` folder (e.g., `WhatsFlow Setup 1.0.0.exe`).
 
 ---
 
-## 🖥️ Server Deployment (Headless)
+## Running from Source (Without Building)
 
-If you wish to run only the backend server (without the Electron UI):
+### Development Mode
+```powershell
+npm run dev
+```
+Starts backend (port 3000) + frontend (port 5173) + Electron concurrently.
 
-1. **Configure Environment**:
-   Create a `.env` file in the root:
-   ```env
-   NODE_ENV=production
-   PORT=3000
-   WA_API_VERSION=v19.0
-   ```
-   *Note: Database credentials are stored in `database.sqlite`.*
+### Production Mode (from source)
+```powershell
+npm run start:prod
+```
+Starts Electron with `NODE_ENV=production`. Requires `frontend/dist/` to exist (run `npm run build:frontend` first).
 
-2. **Start Server**:
-   ```bash
-   node backend/server.js
-   ```
-
-3. **Process Management**:
-   Use PM2 for production reliability:
-   ```bash
-   npm install -g pm2
-   pm2 start backend/server.js --name "whatsflow-backend"
-   ```
+### With Tunnel (Webhook support)
+```powershell
+npm run start:tunnel
+```
+Same as production + starts LocalTunnel for public webhook URL.
 
 ---
 
-## 🛠️ Database Management
+## Database Management
 
-The app increases reliability by using **WAL (Write-Ahead Logging)** mode for SQLite.
-- **Backup**: Regularly copy `database.sqlite`.
-- **Location**:
-  - Dev: Project root.
-  - Prod: `%APPDATA%/WhatsFlow/database.sqlite` (varies by OS).
+The app uses SQLite with **WAL (Write-Ahead Logging)** mode for performance.
+
+- **Location:** `database.sqlite` in the project root (dev) or app data directory (installed)
+- **Auto-created:** Schema initializes automatically on first run
+- **Backup:** Copy `database.sqlite` while the app is not running
+
+> **Do not delete** `database.sqlite-shm` and `database.sqlite-wal` while the app is running — these are active WAL files. Stop the app first.
+
+---
+
+## Port Configuration
+
+Default port: **3000**
+
+To change:
+```powershell
+$env:PORT=3001
+npm run start:prod
+```
+
+> If port 3000 is already in use when starting the packaged app, the error is logged gracefully (no crash dialog). Close other instances first.
+
+---
+
+**For configuration details, see [CONFIGURATION.md](./CONFIGURATION.md)**
+**For troubleshooting, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**

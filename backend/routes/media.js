@@ -7,7 +7,7 @@
  *              the resulting media ID. Temp files are always cleaned up.
  * @module backend/routes/media
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const express = require('express');

@@ -5,7 +5,7 @@
  *              Falls back to Base64 encoding in development only — never in production.
  * @module backend/services/cryptoService
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const logger = require('../utils/logger');

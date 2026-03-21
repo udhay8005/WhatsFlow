@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# ─── WhatsFlow — Pre-commit Hook ─────────────────────────────
+# Runs lint-staged to lint and auto-fix staged frontend files.
+# Author: Udhaya Chandra SA
+
+npx lint-staged

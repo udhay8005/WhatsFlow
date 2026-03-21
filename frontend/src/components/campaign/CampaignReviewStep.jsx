@@ -5,7 +5,7 @@
  *              scheduled time — before the user launches or saves as draft.
  * @module components/campaign/CampaignReviewStep
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useState } from 'react';

@@ -6,7 +6,7 @@
  *              Subscribes to real-time Socket.IO 'campaign_progress' events.
  * @module pages/Dashboard
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useEffect, useState } from 'react';
@@ -24,7 +24,36 @@ export default function Dashboard() {
     const [trendData, setTrendData] = useState([]);
     const [distData, setDistData] = useState([]);
 
+    // Declared before useEffect so the hook can reference it without a hoisting violation.
+    const loadData = async () => {
+        try {
+            const [campaignsRes, trendRes, distRes] = await Promise.all([
+                apiService.getCampaigns(),
+                apiService.getStatsTrend(),
+                apiService.getStatsDistribution()
+            ]);
+
+            const list = campaignsRes.data;
+            setRecent(list.slice(0, 50));
+            setTrendData(trendRes.data);
+            setDistData(distRes.data);
+
+            // Calculate aggregate stats locally
+            const totalSent = list.reduce((n, c) => n + (c.success_count || 0), 0);
+            const totalFailed = list.reduce((n, c) => n + (c.failed_count || 0), 0);
+
+            setStats({
+                campaigns: list.length,
+                sent: totalSent,
+                failed: totalFailed
+            });
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         loadData();
 
         if (!socket) return;
@@ -55,33 +84,6 @@ export default function Dashboard() {
             socket.off('campaign_progress', onProgress);
         };
     }, [socket]);
-
-    const loadData = async () => {
-        try {
-            const [campaignsRes, trendRes, distRes] = await Promise.all([
-                apiService.getCampaigns(),
-                apiService.getStatsTrend(),
-                apiService.getStatsDistribution()
-            ]);
-
-            const list = campaignsRes.data;
-            setRecent(list.slice(0, 50));
-            setTrendData(trendRes.data);
-            setDistData(distRes.data);
-
-            // Calculate aggregate stats locally
-            const totalSent = list.reduce((n, c) => n + (c.success_count || 0), 0);
-            const totalFailed = list.reduce((n, c) => n + (c.failed_count || 0), 0);
-
-            setStats({
-                campaigns: list.length,
-                sent: totalSent,
-                failed: totalFailed
-            });
-        } catch (err) {
-            console.error(err);
-        }
-    };
 
     const handleToggleStatus = async (id, action) => {
         try {

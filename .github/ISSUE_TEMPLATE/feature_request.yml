@@ -1,0 +1,66 @@
+name: ✨ Feature Request
+description: Suggest a new feature or improvement for WhatsFlow
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make WhatsFlow better? We'd love to hear it!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem does this feature solve? What can you NOT do right now?
+      placeholder: "I'm frustrated when I have to manually re-upload contacts for every campaign..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature you'd like to see.
+      placeholder: "Add a 'Saved Contact Lists' feature so I can reuse uploaded CSVs..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the app does this affect?
+      options:
+        - Campaign Management
+        - Contact Management
+        - Messaging / WhatsApp API
+        - Scheduling / Cron
+        - Dashboard / Analytics
+        - Settings / Configuration
+        - Blacklist
+        - Webhooks
+        - Notifications / Email
+        - UI / UX
+        - Performance
+        - Security
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Before Submitting
+      options:
+        - label: I have searched existing issues and this feature has not been requested before
+          required: true

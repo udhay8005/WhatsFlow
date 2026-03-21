@@ -5,7 +5,7 @@
  *              descendant component via the useToast() hook.
  * @module components/AppWrapper
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { Component } from 'react';

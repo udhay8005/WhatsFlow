@@ -1,8 +1,8 @@
 # WhatsFlow - Technical Architecture Documentation
 
-**Version:** 1.0.0  
-**Last Updated:** January 2026  
-**Author:** WhatsFlow Development Team
+**Version:** 1.0.1
+**Last Updated:** March 2026
+**Author:** Udhaya Chandra SA
 
 ---
 
@@ -118,10 +118,15 @@ Terminal 3: electron .          → Electron loads localhost:5173
 
 #### Production Mode
 ```
-Single Process: npm run start:prod
+Built Executable: WhatsFlow Setup 1.0.1.exe
   └─ Electron Main Process
+      ├─ Sets NODE_ENV=production
       ├─ Requires backend/server.js (embedded)
-      └─ Loads frontend/dist (built static files)
+      ├─ Serves frontend/dist via Express static
+      └─ SPA catch-all route for React Router
+
+Development: npm run start:prod
+  └─ Same as above but from source
 ```
 
 ---
@@ -131,7 +136,7 @@ Single Process: npm run start:prod
 ### Frontend Layer
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **React** | 19.2.0 | UI framework for component-based architecture |
+| **React** | 19.2.0 | UI framework with dark-mode aware charts via useTheme() |
 | **React Router** | 7.12.0 | Client-side routing (SPA navigation) |
 | **Vite** | 7.2.4 | Build tool and dev server (HMR) |
 | **Tailwind CSS** | 4.1.18 | Utility-first styling framework |
@@ -187,6 +192,9 @@ Single Process: npm run start:prod
 - Create HTTP and Socket.IO servers
 - Start message queue worker
 - Schedule cron jobs
+- Serve frontend in production
+- EADDRINUSE error handling (graceful log, no crash)
+- SPA catch-all route (React Router support for all paths)
 
 **Key Middleware:**
 ```javascript
@@ -213,7 +221,7 @@ app.use('/api/', apiLimiter)
 **Technology:** SQLite with WAL (Write-Ahead Logging) mode
 
 **Configuration:**
-- **Location:** `./database.sqlite` (prod) or `./database.test.sqlite` (test)
+- **Location:** `./database.sqlite`
 - **Mode:** WAL (improves concurrent read/write performance)
 - **Encryption:** AES-256-CBC for sensitive config values
 
@@ -614,6 +622,6 @@ WhatsFlow is a well-architected desktop application that balances simplicity wit
 - ✅ Robust error handling and validation
 - ✅ Security-first design (encryption, signature validation)
 - ✅ Real-time user feedback via Socket.IO
-- ✅ Comprehensive test coverage (70%+)
+- ✅ Comprehensive test coverage
 
 **For detailed usage instructions, see [USER_GUIDE.md](./USER_GUIDE.md)**

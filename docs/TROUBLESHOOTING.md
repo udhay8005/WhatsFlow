@@ -1,6 +1,8 @@
 # WhatsFlow - Troubleshooting Guide
 
-**Version:** 1.0.0  
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
 **Purpose:** Resolve common issues and errors
 
 ---
@@ -111,6 +113,8 @@ if (require.main === module || process.env.NODE_ENV === 'production') {
 ---
 
 ### Issue: "Port 3000 is already in use"
+
+> **Note (v1.0.1+):** The packaged app now handles this error gracefully — it logs the conflict and does not show a crash dialog. However, the app will not start correctly until the port is freed.
 
 **Symptoms:**
 ```
@@ -543,7 +547,7 @@ localStorage.setItem('theme', newTheme)
 
 ```powershell
 # 1. Check if backend is running
-curl http://localhost:3000/api/settings/config
+curl http://localhost:3000/health
 
 # 2. Check database
 sqlite3 database.sqlite "SELECT COUNT(*) FROM campaigns;"
@@ -566,8 +570,8 @@ Get-Process node, electron | Stop-Process -Force
 # 2. Clear databases
 Remove-Item database.sqlite*
 
-# 3. Clear logs
-Remove-Item backend/logs/* -Force -Recurse
+# 3. Logs directory is auto-recreated on next start
+# (No pre-existing logs to delete in clean install)
 
 # 4. Reinstall dependencies
 Remove-Item node_modules, package-lock.json -Force -Recurse
@@ -590,7 +594,7 @@ npm run start:prod
 
 If issues persist:
 1. **Check logs:** `backend/logs/error.log`
-2. **Enable debug mode:** `$env:NODE_ENV="development"`
+2. **Enable debug mode:** `$env:LOG_LEVEL="debug"`
 3. **Run tests:** `npm run test` (look for failing tests)
 4. **Check GitHub Issues:** [github.com/your-repo/whatsflow/issues](https://github.com)
 5. **Contact support:** support@whatsflow.com

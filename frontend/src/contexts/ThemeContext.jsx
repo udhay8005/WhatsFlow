@@ -6,7 +6,7 @@
  *              class before React renders, preventing a flash of un-themed content.
  * @module contexts/ThemeContext
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -19,6 +19,7 @@ const ThemeContext = createContext();
  * @returns {{ theme: string, toggleTheme: function }} Theme context value.
  * @throws {Error} If used outside of ThemeProvider.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const useTheme = () => {
     const context = useContext(ThemeContext);
     if (!context) {
@@ -37,7 +38,7 @@ if (typeof window !== 'undefined') {
         } else {
             document.documentElement.classList.remove('dark');
         }
-    } catch (e) {
+    } catch {
         // localStorage unavailable (private browsing or storage quota exceeded) — default to dark
         document.documentElement.classList.add('dark');
     }
@@ -68,7 +69,7 @@ export const ThemeProvider = ({ children }) => {
             } else {
                 root.classList.remove('dark');
             }
-        } catch (error) {
+        } catch {
             // Non-fatal: theme will still apply in memory for this session
         }
     }, [theme]);

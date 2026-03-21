@@ -6,7 +6,7 @@
  *              clearing, app cleanup). All sensitive values are masked on display.
  * @module pages/Settings
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useEffect, useState } from 'react';
@@ -53,7 +53,7 @@ export default function Settings() {
             const res = await apiService.getTunnelStatus();
             setTunnelUrl(res.data.url);
             setTunnelActive(res.data.active);
-        } catch (err) {
+        } catch {
             // Tunnel status is optional — silently ignore if not available
         }
     };
@@ -390,7 +390,7 @@ export default function Settings() {
                                 try {
                                     const res = await apiService.clearLogs();
                                     addToast(res.data.message || 'Logs cleared successfully', 'success');
-                                } catch (err) {
+                                } catch {
                                     addToast('Failed to clear logs', 'error');
                                 }
                             }}
@@ -412,7 +412,7 @@ export default function Settings() {
                                 try {
                                     const res = await apiService.cleanApp();
                                     addToast(res.data.message || 'App cleaned successfully', 'success');
-                                } catch (err) {
+                                } catch {
                                     addToast('Failed to clean app', 'error');
                                 }
                             }}

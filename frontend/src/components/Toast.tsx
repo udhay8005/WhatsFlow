@@ -6,7 +6,7 @@
  *              Toasts auto-dismiss after a configurable duration (default 4 s).
  * @module components/Toast
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';

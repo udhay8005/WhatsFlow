@@ -1,66 +1,140 @@
 # WhatsFlow - User Guide
 
-## 🚀 Getting Started
-
-### 1. Installation
-WhatsFlow is a desktop application.
-1. Download the latest installer from the releases page (or build from source).
-2. Run the installer (`.exe` on Windows).
-3. Logic takes you to the initial configuration screen.
-
-### 2. First-Time Setup
-Before sending messages, you need to configure your WhatsApp API credentials:
-1. Go to **Settings** (⚙️ icon in sidebar).
-2. Enter your **WhatsApp Phone ID**, **WABA ID**, and **System User Access Token**.
-   - These can be found in your [Meta App Dashboard](https://developers.facebook.com/).
-3. (Optional) Configure **SMTP Settings** for email fallback.
-4. Click **Save Settings**.
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
 
 ---
 
-## 📨 Creating a Campaign
+## Getting Started
+
+### Installation
+
+**Option A: Using the Installer (Recommended)**
+1. Run `WhatsFlow Setup 1.0.1.exe` from the `dist/` folder.
+2. The app installs automatically and creates a desktop shortcut.
+3. Launch **WhatsFlow** from the desktop or Start Menu.
+
+**Option B: Portable**
+1. Run `WhatsFlow 1.0.1.exe` directly — no installation needed.
+
+---
+
+### First-Time Setup
+
+Before sending messages, configure your WhatsApp API credentials:
+
+1. Navigate to **Settings** (gear icon in sidebar).
+2. Under **WhatsApp API**, enter:
+   - **Access Token** — from Meta Business System User (permanent token recommended)
+   - **Phone Number ID** — from Meta Developer Console -> WhatsApp -> API Setup
+   - **WABA ID** — WhatsApp Business Account ID
+   - **App Secret** — from Meta App Settings -> Basic (required for webhook security)
+   - **Verify Token** — any strong custom string you choose
+3. Click **Save Configuration**. Green checkmarks confirm each field.
+4. *(Optional)* Configure **Email Fallback** (SMTP) under the Email tab.
+
+---
+
+## Creating a Campaign
 
 ### Step 1: Campaign Details
-- **Name**: Give your campaign a descriptive name (e.g., "Jan Newsletter").
-- **Template**: Select an **APPROVED** WhatsApp template from the dropdown. 
-  - *Note: Only templates approved in Meta Business Manager will appear here.*
-- **Media**: (Optional) Upload an image/video if your template has a media header.
+- **Campaign Name** — descriptive label (e.g., "March Newsletter").
+- **Template** — select an APPROVED WhatsApp template from the dropdown. Only approved templates from your WABA appear.
+- **Media** *(optional)* — upload an image (JPG/PNG) or video (MP4) up to 16MB if your template has a media header.
 
 ### Step 2: Upload Contacts
 - Click **Upload Excel/CSV**.
-- Your file must have at least a `Phone` column.
-- Supported headers: `Phone`, `Name`, `Email`.
-- **Validation**: The system automatically validates phone numbers. Invalid numbers will be flagged.
+- File must have at least a `Phone` column (E.164 format recommended: `+911234567890`).
+- Supported columns: `Phone`, `Email`, and dynamic parameter columns mapped to `{{1}}`, `{{2}}`, etc.
+- Invalid phone numbers are flagged and skipped automatically.
 
 ### Step 3: Review & Schedule
-- Review the total count and valid/invalid numbers.
-- **Send Now**: Starts processing immediately.
-- **Schedule**: Pick a future date/time. The system will auto-start sending at that time (app must be running).
+- Review valid/invalid contact count.
+- Preview individual messages using the eye icon.
+- **Send Now** — starts processing immediately.
+- **Schedule for later** — pick a future date/time. The app must be running at that time.
+- Click **Launch Campaign** -> **Confirm & Launch**.
 
 ---
 
-## 📊 Analytics Dashboard
+## Analytics Dashboard
 
-The Home page provides real-time insights:
-- **Total Campaigns**: Number of campaigns created.
-- **Messages Sent**: Successfully delivered WhatsApp messages.
-- **Failed**: Messages that could not be delivered.
-- **Pending**: Messages waiting in queue.
-- **Success Rate**: Visual chart of delivery performance.
+The Dashboard provides real-time insights:
+- **Total Campaigns** — all campaigns created.
+- **Messages Sent** — successfully sent to WhatsApp.
+- **Failed** — delivery failures.
+- **Pending** — messages waiting in queue.
+- **Delivery Trend** — 7-day line chart (dark/light mode adaptive).
+- **Status Distribution** — pie chart of message statuses.
 
 ---
 
-## ❓ Troubleshooting
+## Campaign History
 
-### "Invalid Credentials" Error
-- Verify your Access Token hasn't expired. System User tokens are recommended for permanence.
-- Ensure your Phone ID matches the one in Meta Dashboard.
+The History page lists all campaigns with:
+- Status badge (Draft, Active, Paused, Processing, Completed, Failed)
+- Progress bar for active/paused campaigns
+- Pause / Resume controls for running campaigns
+- Delete button (with confirmation)
+- Expandable row showing per-message delivery status (Phone, Status, Channel, Error)
+
+---
+
+## Blacklist Management
+
+Prevent specific numbers from receiving future messages:
+1. Navigate to **Blacklist** in the sidebar.
+2. Enter the phone number and an optional reason, then click **Block**.
+3. Blocked numbers are automatically skipped during campaign eligibility checks.
+4. Remove a number from the blacklist using the trash icon.
+
+---
+
+## Settings
+
+### WhatsApp API Tab
+- Configure Meta credentials (encrypted at rest).
+- View tunnel webhook URL (when running with `npm run start:tunnel` or production + tunnel mode).
+
+### Email Fallback Tab
+- Configure SMTP credentials for automatic email delivery when WhatsApp fails.
+
+### Operations Tab
+- **Worker TPS** — Transactions Per Second (1-100). Start at 5-10, increase gradually.
+- **Clear Logs** — deletes `backend/logs/*.log`.
+- **Clean App** — clears uploaded media files.
+- **Clear History** — deletes all campaigns and messages from database.
+
+---
+
+## Troubleshooting
+
+### "Invalid Credentials" / Templates Not Loading
+- Verify the Access Token hasn't expired. Use a permanent System User token.
+- Ensure Phone Number ID and WABA ID are exact (copy from Meta Developer Console).
+- Re-enter credentials in Settings and save.
 
 ### Messages Stuck in "Queued"
-- Check if the **Worker** is running (green indicator in logs/status).
-- Check your **TPS (Transactions Per Second)** setting in Settings. If set too low, sending will be slow.
+- Increase TPS in Settings -> Operations (default is 1).
+- Check that your WhatsApp credentials are valid — failed sends stay queued.
 
 ### "Template Not Found"
-- Ensure the template is **APPROVED** in Meta.
-- Verify the template language matches (default is `en_US`).
-- Click "Refresh Templates" or reload the page to fetch the latest list.
+- Template must be **APPROVED** in Meta Business Manager.
+- Template name is case-sensitive.
+- Click refresh (re-navigate to New Campaign) to fetch latest template list.
+
+### Webhook Not Receiving Updates (Statuses Stuck at "Sent")
+- Start the app with `npm run start:tunnel` or using the tunnel-enabled Electron mode.
+- Copy the webhook URL from Settings -> WhatsApp API tab.
+- Paste it in Meta Developer Console -> Your App -> WhatsApp -> Configuration -> Webhook.
+- Subscribe to the `messages` field.
+
+### Port 3000 Already in Use
+- Another instance of WhatsFlow (or dev server) is running.
+- Close all other instances, then relaunch.
+
+---
+
+**For configuration details, see [CONFIGURATION.md](./CONFIGURATION.md)**
+**For technical issues, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**

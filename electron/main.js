@@ -6,7 +6,7 @@
  *              graceful shutdown of the worker and database on before-quit.
  * @module electron/main
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const { app, BrowserWindow } = require('electron');
@@ -18,6 +18,7 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 // In production, run the backend server inside the main process
 if (!isDev) {
     try {
+        process.env.NODE_ENV = 'production'; // Ensure server starts and serves static files
         console.log('Starting internal backend server...');
         require('../backend/server');
     } catch (e) {
@@ -70,7 +71,7 @@ function createWindow() {
         width: 1280,
         height: 800,
         title: 'WhatsFlow',
-        icon: path.join(__dirname, '../frontend/public/logo.png'),
+        icon: path.join(__dirname, '../frontend/dist/logo.png'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,

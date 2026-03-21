@@ -5,7 +5,7 @@
  *              approved template retrieval via Graph API v19.0.
  * @module backend/services/whatsappService
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const axios = require('axios');

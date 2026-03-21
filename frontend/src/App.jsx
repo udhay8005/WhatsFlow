@@ -5,7 +5,7 @@
  *              and defines all client-side routes. Unknown routes redirect to "/".
  * @module pages/App
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React from 'react';

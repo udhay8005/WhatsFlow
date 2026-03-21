@@ -6,7 +6,7 @@
  *              timeout, network errors, and 403 key-expiry retries via interceptors.
  * @module services/api
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';

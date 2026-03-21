@@ -5,7 +5,7 @@
  *              Attach these arrays directly to route definitions.
  * @module backend/middleware/validators
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const { body, validationResult } = require('express-validator');

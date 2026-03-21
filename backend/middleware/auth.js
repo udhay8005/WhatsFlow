@@ -6,7 +6,7 @@
  *              All /api/* routes must include the key in the X-API-Key header.
  * @module backend/middleware/auth
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const crypto = require('crypto');

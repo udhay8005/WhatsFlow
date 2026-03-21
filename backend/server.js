@@ -7,7 +7,7 @@
  *              graceful shutdown on SIGTERM / SIGINT.
  * @module backend/server
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const express = require('express');
@@ -72,10 +72,17 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
-    const path = require('path');
     const frontendPath = path.join(__dirname, '../frontend/dist');
     app.use(express.static(frontendPath));
     logger.info('Serving frontend from: ' + frontendPath);
+
+    // SPA fallback — send index.html for any non-API route
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/webhook') || req.path.startsWith('/health')) {
+            return next();
+        }
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
 }
 
 // Make io accessible in routes
@@ -137,6 +144,13 @@ if (require.main === module || process.env.NODE_ENV === 'production') {
             } catch (error) {
                 logger.warn('Failed to start tunnel - webhooks will only work on local network');
             }
+        }
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            logger.error(`Port ${PORT} is already in use. Close other instances and restart.`);
+        } else {
+            logger.error('Server error: ' + err.message);
+            throw err;
         }
     });
 }

@@ -1,5 +1,9 @@
 # LocalTunnel Setup Guide
 
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
+
 ## What is LocalTunnel?
 
 LocalTunnel exposes your local WhatsFlow app to the internet with a **permanent public URL** so Meta can send webhook events to your localhost.
@@ -63,18 +67,10 @@ npm run start:tunnel
 **Expected Output:**
 ```
 Starting internal backend server...
-Waiting 3 seconds for backend server to start...
 Server running on http://localhost:3000
-🔌 Starting LocalTunnel...
-✅ LocalTunnel started successfully!
-📡 Public Webhook URL: https://whatsflow-yourname.loca.lt/webhook
-   Forwarding to: http://localhost:3000
-
-⚙️  Configure this URL in Meta Developer Console:
-   1. Go to https://developers.facebook.com/
-   2. Your App → WhatsApp → Configuration → Webhook
-   3. Callback URL: https://whatsflow-yourname.loca.lt/webhook
-   4. Verify Token: (from your Settings page)
+Cron jobs scheduled
+LocalTunnel started: https://whatsflow-yourname.loca.lt
+Public webhook URL: https://whatsflow-yourname.loca.lt/webhook
 ```
 
 **Copy the webhook URL shown!** (e.g., `https://whatsflow-yourname.loca.lt/webhook`)
@@ -200,7 +196,7 @@ That's it! Always use this command instead of `npm run start:prod`.
 npm run start:prod
 ```
 
-Use this when you don't need webhooks (e.g., just sending messages locally).
+Use this when you don't need webhooks (e.g., just sending messages locally). If using the installed exe (`WhatsFlow Setup 1.0.1.exe`), tunnel is not active — it runs in `start:prod` equivalent mode.
 
 ---
 
@@ -224,8 +220,9 @@ npm run start:prod
 ### Check Tunnel Status
 
 ```javascript
-// In browser console
-fetch('/api/settings/tunnel/status').then(r => r.json())
+// In browser console (or from Settings page tunnel status display)
+fetch('/api/settings/tunnel').then(r => r.json()).then(console.log)
+// Returns: { active: true, url: "https://whatsflow-yourname.loca.lt" }
 ```
 
 ---

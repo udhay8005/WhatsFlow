@@ -6,7 +6,7 @@
  *              status updates via Socket.IO.
  * @module pages/History
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useEffect, useState } from 'react';
@@ -67,7 +67,7 @@ export default function History() {
             if (action === 'pause') await apiService.pauseCampaign(id);
             else await apiService.resumeCampaign(id);
             loadCampaigns();
-        } catch (err) {
+        } catch {
             addToast('Failed to update campaign status', 'error');
         }
     };
@@ -95,7 +95,7 @@ export default function History() {
             try {
                 const res = await apiService.getCampaignDetails(id);
                 setDetails(prev => ({ ...prev, [id]: res.data.messages }));
-            } catch (err) {
+            } catch {
                 addToast('Failed to load campaign details', 'error');
             }
         }

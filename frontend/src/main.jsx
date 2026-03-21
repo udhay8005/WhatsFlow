@@ -5,7 +5,7 @@
  *              with React.StrictMode enabled for development-time warnings.
  * @module main
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React from 'react';

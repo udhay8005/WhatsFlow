@@ -7,7 +7,7 @@
  *              exponential backoff on DB errors to prevent runaway polling.
  * @module backend/worker
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const db = require('./database');

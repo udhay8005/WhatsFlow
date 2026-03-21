@@ -5,7 +5,7 @@
  *              adding a block reason and filtering the blocked-numbers list by search.
  * @module pages/Blacklist
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,21 +16,20 @@ import { useToast } from '../components/Toast';
 export default function Blacklist() {
     const { addToast } = useToast();
     const [blacklist, setBlacklist] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [_loading, setLoading] = useState(true);
     const [blocking, setBlocking] = useState(false);
     const [newPhone, setNewPhone] = useState('');
     const [reason, setReason] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
 
-    useEffect(() => {
-        fetchBlacklist();
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { fetchBlacklist(); }, []);
 
     const fetchBlacklist = async () => {
         try {
             const res = await apiService.getBlacklist();
             setBlacklist(res.data);
-        } catch (err) {
+        } catch {
             addToast('Failed to load blacklist', 'error');
         } finally {
             setLoading(false);
@@ -46,7 +45,7 @@ export default function Blacklist() {
             setReason('');
             addToast('Number blocked successfully', 'success');
             fetchBlacklist();
-        } catch (err) {
+        } catch {
             addToast('Failed to block number', 'error');
         } finally {
             setBlocking(false);
@@ -59,7 +58,7 @@ export default function Blacklist() {
             await apiService.removeFromBlacklist(phone);
             addToast('Number unblocked', 'success');
             fetchBlacklist();
-        } catch (err) {
+        } catch {
             addToast('Failed to unblock number', 'error');
         }
     };

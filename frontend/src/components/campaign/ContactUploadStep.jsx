@@ -6,7 +6,7 @@
  *              a summary with warn/error counts before the user proceeds.
  * @module components/campaign/ContactUploadStep
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React from 'react';
@@ -26,6 +26,7 @@ export default function ContactUploadStep({
     duplicateMode, setDuplicateMode,
     sumColumn, setSumColumn,
     templateParams,
+    paramMappings, setParamMappings,
     // Filtering & Selection Props
     dateCol, setDateCol,
     filterType, setFilterType,
@@ -39,7 +40,7 @@ export default function ContactUploadStep({
         if (filterType === 'rows') {
             const start = parseInt(filterRange.start) || 1;
             const end = parseInt(filterRange.end) || rawRows.length;
-            const startIndex = Math.max(0, start - 2);
+            const _startIndex = Math.max(0, start - 2); // computed but not used in display filter
             // In display logic, we just want to visually check if it matches range
             // But let's reuse logic: display ALL valid for filter, user can check/uncheck
             // If we filter, we only SHOW matching.
@@ -102,7 +103,7 @@ export default function ContactUploadStep({
     };
 
     const [eligibilityData, setEligibilityData] = React.useState({ blacklisted: [], limited: [] });
-    const [checkingEligibility, setCheckingEligibility] = React.useState(false);
+    const [_checkingEligibility, setCheckingEligibility] = React.useState(false);
 
     // Derived state for Select All checkbox
     const isAllSelected = displayRows.length > 0 && displayRows.every(r => !excludedRowIndices.has(r.idx));
@@ -144,7 +145,8 @@ export default function ContactUploadStep({
 
         const timeout = setTimeout(checkSAFETY, 800); // Debounce
         return () => clearTimeout(timeout);
-    }, [phoneCol, rawRows]); // Re-run if file changes or mapping changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phoneCol, rawRows]); // Intentionally limited: re-run only when phone col or file changes
 
     // Helper to check row status
     const getRowSafetyStatus = (row) => {

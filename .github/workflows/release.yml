@@ -1,0 +1,72 @@
+# ============================================================
+# Release — WhatsFlow
+# Builds the Electron app and publishes a GitHub Release
+# whenever a version tag (v*.*.*) is pushed.
+# Author: Udhaya Chandra SA
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+jobs:
+  release:
+    name: Build & Release (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Electron app
+        run: npx electron-builder --win --publish never
+        env:
+          NODE_ENV: production
+
+      - name: Upload portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: whatsflow-portable-${{ github.ref_name }}
+          path: dist/WhatsFlow*.exe
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: WhatsFlow ${{ github.ref_name }}
+          body: |
+            ## WhatsFlow ${{ github.ref_name }}
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.
+
+            ### Downloads
+            | File | Description |
+            |------|-------------|
+            | `WhatsFlow Setup *.exe` | Windows NSIS Installer (recommended) |
+            | `WhatsFlow *.exe` | Windows Portable (no installation needed) |
+          files: dist/WhatsFlow*.exe
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}

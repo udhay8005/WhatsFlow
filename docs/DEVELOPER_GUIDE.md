@@ -1,6 +1,8 @@
 # WhatsFlow - Developer Guide
 
-**Version:** 1.0.0  
+**Version:** 1.0.1
+**Author:** Udhaya Chandra SA
+**Last Updated:** March 2026
 **Target Audience:** Developers contributing to or maintaining WhatsFlow
 
 ---
@@ -90,70 +92,73 @@ whatsflow/
 │   │   ├── media.test.js
 │   │   └── errorHandler.test.js
 │   ├── middleware/            # Express middleware
+│   │   ├── auth.js           # API key authentication
 │   │   ├── errorHandler.js   # Global error handler
 │   │   └── validators.js     # Input validation rules
 │   ├── routes/                # API endpoints
 │   │   ├── campaigns.js
+│   │   ├── contacts.js
 │   │   ├── media.js
 │   │   ├── settings.js
 │   │   ├── stats.js
 │   │   └── webhook.js
 │   ├── services/              # Business logic
-│   │   ├── cryptoService.js  # Encryption/decryption
-│   │   ├── emailService.js   # SMTP email
-│   │   └── whatsappService.js # WhatsApp API
+│   │   ├── cryptoService.js  # AES-256 encryption/decryption
+│   │   ├── emailService.js   # SMTP email fallback
+│   │   └── whatsappService.js # WhatsApp Business API
 │   ├── utils/                 # Utilities
 │   │   └── logger.js         # Winston logger
 │   ├── cron.js                # Scheduled tasks
-│   ├── database.js            # SQLite setup
-│   ├── server.js              # Express app
+│   ├── database.js            # SQLite setup & schema
+│   ├── server.js              # Express + Socket.IO app
+│   ├── tunnelManager.js       # LocalTunnel management
 │   └── worker.js              # Message queue processor
 │
-├── frontend/                   # React Frontend
+├── frontend/                   # React 19 Frontend
 │   ├── src/
-│   │   ├── assets/            # Images, fonts
+│   │   ├── assets/            # Static assets
 │   │   ├── components/        # Reusable components
-│   │   │   ├── Layout.jsx    # App shell (sidebar, header)
-│   │   │   └── Toast.jsx     # Notification system
+│   │   │   ├── Layout.jsx    # App shell (sidebar, header, backend status)
+│   │   │   ├── AppWrapper.jsx
+│   │   │   ├── Toast.tsx     # Toast notification system
+│   │   │   └── campaign/     # Campaign wizard steps
+│   │   │       ├── CampaignDetailsStep.jsx
+│   │   │       ├── ContactUploadStep.jsx
+│   │   │       └── CampaignReviewStep.jsx
+│   │   ├── charts/            # Recharts components (dark-mode aware)
+│   │   │   ├── DeliveryTrendChart.jsx
+│   │   │   └── StatusDistributionChart.jsx
 │   │   ├── contexts/          # React Context API
-│   │   │   ├── ThemeContext.jsx  # Dark mode state
-│   │   │   └── ToastContext.jsx  # Toast notifications
+│   │   │   ├── ThemeContext.jsx  # Dark/light mode (no debug logs)
+│   │   │   └── SocketContext.jsx # Socket.IO singleton
 │   │   ├── pages/             # Route components
 │   │   │   ├── Dashboard.jsx
 │   │   │   ├── NewCampaign.jsx
 │   │   │   ├── History.jsx
+│   │   │   ├── Blacklist.jsx
 │   │   │   └── Settings.jsx
-│   │   ├── utils/             # Frontend utilities
-│   │   │   └── excelParser.ts # Excel parsing logic
-│   │   ├── App.jsx            # Root component
-│   │   └── main.jsx           # Entry point
-│   ├── dist/                  # Production build output
-│   ├── index.html             # HTML template
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── vite.config.js
+│   │   ├── services/          # API client
+│   │   │   └── api.ts        # Axios with X-API-Key interceptor
+│   │   └── utils/             # Frontend utilities
+│   │       ├── contactProcessor.ts
+│   │       └── excelParser.ts
+│   ├── public/
+│   │   └── logo.png          # App icon (also copied to dist/)
+│   └── vite.config.js         # Bundler + dev proxy (/api, /health, /auth, /webhook)
 │
 ├── electron/                   # Electron Main Process
-│   ├── main.js                # Electron entry
-│   └── preload.js             # Preloader script
+│   ├── main.js                # Entry: sets NODE_ENV, starts backend, creates window
+│   └── preload.js             # Context bridge
 │
 ├── docs/                       # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── DEVELOPER_GUIDE.md (this file)
-│   ├── USER_GUIDE.md
-│   ├── API_REFERENCE.md
-│   └── DEPLOYMENT.md
-│
-├── tests/                      # E2E Tests
+├── tests/                      # E2E Tests (Playwright)
 │   └── e2e/
 │       └── campaign_flow.spec.js
 │
-├── scripts/                    # Utility scripts
-│
-├── database.sqlite             # Production database
+├── .env.template               # Environment variable template
+├── database.sqlite             # Production database (WAL mode)
 ├── jest.config.js              # Jest configuration
-├── package.json                # Root dependencies
-├── playwright.config.js        # Playwright config
+├── package.json                # Root dependencies + electron-builder config
 └── README.md
 ```
 
@@ -166,23 +171,17 @@ whatsflow/
 ```powershell
 # Method 1: All-in-one (recommended)
 npm run dev
+# Runs concurrently: backend (3000) + Vite dev server (5173) + Electron
 
-# This runs concurrently:
-# - Backend server (port 3000)
-# - Frontend dev server (port 5173)
-# - Electron app (loads from 5173)
-```
-
-```powershell
-# Method 2: Separate terminals (for debugging)
+# Method 2: Separate terminals
 # Terminal 1: Backend
 npm run server
 
-# Terminal 2: Frontend
+# Terminal 2: Frontend (with Vite proxy to backend)
 npm run frontend
 
-# Terminal 3: Electron
-npm start  # Waits for both servers, then opens app
+# Terminal 3: Electron (loads localhost:5173)
+npm start
 ```
 
 ### Hot Module Replacement (HMR)
@@ -561,10 +560,12 @@ npm run build:frontend
 ### Electron Build
 
 ```powershell
-# Build for Windows
+# Build frontend + package Electron (single command)
 npm run build
 
-# Output: dist/WhatsFlow Setup.exe
+# Output in dist/:
+#   WhatsFlow 1.0.1.exe           (portable)
+#   WhatsFlow Setup 1.0.1.exe     (installer with desktop shortcut)
 ```
 
 **Build Configuration** (`package.json`):
@@ -573,6 +574,7 @@ npm run build
   "build": {
     "appId": "com.whatsflow.app",
     "productName": "WhatsFlow",
+    "asar": false,
     "files": [
       "electron/**/*",
       "backend/**/*",
@@ -580,8 +582,8 @@ npm run build
       "package.json"
     ],
     "win": {
-      "target": "portable",
-      "sign": null
+      "target": ["portable", "nsis"],
+      "icon": "frontend/public/logo.png"
     }
   }
 }
@@ -601,13 +603,8 @@ npm install
 ```
 
 #### Issue: Port 3000 already in use
-**Solution:**
-```powershell
-# Find process using port 3000
-Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess
 
-# Kill process or change port in .env
-```
+Port 3000 is already in use when starting packaged app -> error is logged gracefully (no crash dialog). Close other instances of WhatsFlow first.
 
 #### Issue: Database locked error
 **Solution:**

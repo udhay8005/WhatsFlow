@@ -6,13 +6,13 @@
  *              editing existing campaigns by loading data via route params.
  * @module pages/NewCampaign
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React, { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { apiService } from '../services/api';
-import { parseExcelFile, normalizePhoneNumber } from '../utils/excelParser';
+import { parseExcelFile } from '../utils/excelParser';
 import { filterContacts, processContactList } from '../utils/contactProcessor';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
@@ -95,6 +95,7 @@ export default function NewCampaign() {
         return () => {
             if (mediaPreview) URL.revokeObjectURL(mediaPreview);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
     const loadCampaignData = async (campaignId) => {
@@ -265,7 +266,9 @@ export default function NewCampaign() {
         }
     };
 
-    // Helper to extract params from a row
+    // Helper to extract template param values from a single contact row.
+    // Used by processContactList internally; kept here for manual overrides.
+    // eslint-disable-next-line no-unused-vars
     const processParams = (row) => {
         return templateParams.map(p => {
             const mapping = paramMappings[p];

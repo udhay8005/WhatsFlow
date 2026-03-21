@@ -7,7 +7,7 @@
  *              history/log clearing, and database optimisation endpoints.
  * @module backend/routes/settings
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const express = require('express');

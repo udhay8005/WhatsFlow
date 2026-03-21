@@ -5,7 +5,7 @@
  *              colours for dark and light themes using the useTheme() hook.
  * @module components/charts/StatusDistributionChart
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 import React from 'react';

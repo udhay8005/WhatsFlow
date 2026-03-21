@@ -5,7 +5,7 @@
  *              unused disk space and keep the database file compact.
  * @module backend/cron
  * @author Udhaya Chandra SA
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 const cron = require('node-cron');

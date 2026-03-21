@@ -1,6 +1,6 @@
 {
   "name": "whatsflow",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "WhatsApp Bulk Sender (Localhost)",
   "main": "electron/main.js",
   "scripts": {
@@ -15,43 +15,56 @@
     "test": "jest --coverage",
     "test:watchAll": "jest --watchAll",
     "test:unit": "jest backend/__tests__",
-    "dev:headless": "concurrently \"npm run server\" \"npm run frontend\""
+    "dev:headless": "concurrently \"npm run server\" \"npm run frontend\"",
+    "prepare": "husky",
+    "lint:backend": "node --input-type=module -e \"\" 2>/dev/null || true",
+    "lint:frontend": "cd frontend && npm run lint"
   },
   "keywords": [],
-  "author": "",
+  "author": "Udhaya Chandra SA",
   "license": "ISC",
   "devDependencies": {
-    "@jest/globals": "^30.2.0",
-    "@playwright/test": "^1.57.0",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@jest/globals": "^30.3.0",
+    "@playwright/test": "^1.58.2",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^26.4.0",
-    "jest": "^30.2.0",
+    "electron": "^36.9.5",
+    "electron-builder": "^26.8.1",
+    "husky": "^9.1.7",
+    "jest": "^30.3.0",
+    "lint-staged": "^16.4.0",
     "supertest": "^7.2.2",
-    "wait-on": "^9.0.3"
+    "wait-on": "^9.0.4"
+  },
+  "lint-staged": {
+    "frontend/src/**/*.{js,jsx}": [
+      "npx --prefix frontend eslint --config frontend/eslint.config.js --fix --max-warnings=0"
+    ]
   },
   "dependencies": {
-    "axios": "^1.6.0",
+    "axios": "^1.13.6",
     "compression": "^1.8.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.0",
-    "express": "^4.18.0",
-    "express-rate-limit": "^8.2.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "express-rate-limit": "^8.3.1",
     "express-validator": "^7.3.1",
     "form-data": "^4.0.5",
     "helmet": "^8.1.0",
     "localtunnel": "^2.0.2",
-    "multer": "^2.0.2",
+    "multer": "^2.1.1",
     "node-cron": "^4.2.1",
-    "nodemailer": "^6.9.0",
-    "socket.io": "^4.7.0",
-    "sqlite3": "^5.1.0",
+    "nodemailer": "^6.10.1",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^6.0.1",
     "winston": "^3.19.0"
   },
   "build": {
     "appId": "com.whatsflow.app",
     "productName": "WhatsFlow",
+    "asar": false,
     "files": [
       "electron/**/*",
       "backend/**/*",
@@ -62,7 +75,10 @@
       "output": "dist"
     },
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "forceCodeSigning": false,
       "signAndEditExecutable": false,
       "icon": "frontend/public/logo.png"
