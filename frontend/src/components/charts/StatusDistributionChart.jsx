@@ -1,14 +1,35 @@
+/**
+ * @file StatusDistributionChart.jsx
+ * @description Donut pie chart showing the distribution of message statuses
+ *              (sent, failed, queued, processing). Adapts tooltip and legend
+ *              colours for dark and light themes using the useTheme() hook.
+ * @module components/charts/StatusDistributionChart
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const COLORS = {
-    sent: '#22c55e',   // green-500
-    failed: '#ef4444', // red-500
-    queued: '#eab308', // yellow-500
-    processing: '#3b82f6' // blue-500
+    sent: '#22c55e',        // green-500
+    failed: '#ef4444',      // red-500
+    queued: '#eab308',      // yellow-500
+    processing: '#3b82f6',  // blue-500
+    delivered: '#14b8a6',   // teal-500
+    read: '#06b6d4',        // cyan-500
 };
 
 export default function StatusDistributionChart({ data }) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    const tooltipBg     = isDark ? '#1F2937' : '#FFFFFF';
+    const tooltipBorder = isDark ? '#374151' : '#E5E7EB';
+    const tooltipText   = isDark ? '#F9FAFB' : '#111827';
+    const legendColor   = isDark ? '#9CA3AF' : '#6B7280';
+
     if (!data || data.length === 0) {
         return (
             <div className="h-64 flex items-center justify-center text-gray-400 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
@@ -17,7 +38,6 @@ export default function StatusDistributionChart({ data }) {
         );
     }
 
-    // Transform API data [{status: 'sent', count: 10}] -> Recharts format
     const chartData = data.map(item => ({
         name: item.status.charAt(0).toUpperCase() + item.status.slice(1),
         value: item.count,
@@ -43,13 +63,21 @@ export default function StatusDistributionChart({ data }) {
                     </Pie>
                     <Tooltip
                         contentStyle={{
-                            backgroundColor: '#fff',
-                            border: '1px solid #e5e7eb',
+                            backgroundColor: tooltipBg,
+                            border: `1px solid ${tooltipBorder}`,
                             borderRadius: '8px',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            color: tooltipText,
                         }}
                     />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    <Legend
+                        verticalAlign="bottom"
+                        height={36}
+                        iconType="circle"
+                        formatter={(value) => (
+                            <span style={{ color: legendColor, fontSize: 12 }}>{value}</span>
+                        )}
+                    />
                 </PieChart>
             </ResponsiveContainer>
         </div>

@@ -1,3 +1,15 @@
+/**
+ * @file webhook.js
+ * @description Meta WhatsApp Business webhook handler.
+ *              Implements the GET verification handshake (hub.mode / hub.verify_token)
+ *              and the POST event listener with mandatory HMAC SHA-256 signature
+ *              validation. Updates message delivery statuses in the database and
+ *              emits real-time Socket.IO events to the frontend.
+ * @module backend/routes/webhook
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
@@ -8,17 +20,28 @@ const db = require('../database');
 const cryptoService = require('../services/cryptoService');
 const logger = require('../utils/logger');
 
-// Helper to get verify token
+/**
+ * @function getVerifyToken
+ * @description Loads and decrypts the webhook_verify_token from app_config.
+ *              Returns null if not yet configured — the GET handler will reject
+ *              the verification request with a 403.
+ * @returns {Promise<string|null>} Decrypted verify token, or null.
+ */
 async function getVerifyToken() {
     return new Promise((resolve) => {
         db.get("SELECT value FROM app_config WHERE key = 'webhook_verify_token'", (err, row) => {
             if (row) resolve(cryptoService.decrypt(row.value));
-            else resolve('whatsflow_secret'); // Fallback
+            else resolve(null); // Must be configured via Settings
         });
     });
 }
 
-// Helper to get app secret for signature validation
+/**
+ * @function getAppSecret
+ * @description Loads and decrypts the wa_app_secret from app_config.
+ *              Used to validate the X-Hub-Signature-256 header on incoming POST events.
+ * @returns {Promise<string|null>} Decrypted app secret, or null if not configured.
+ */
 async function getAppSecret() {
     return new Promise((resolve) => {
         db.get("SELECT value FROM app_config WHERE key = 'wa_app_secret'", (err, row) => {
@@ -36,6 +59,11 @@ router.get('/', async (req, res) => {
 
     if (mode && token) {
         const configuredToken = await getVerifyToken();
+
+        if (!configuredToken) {
+            logger.error('Webhook verify token not configured — rejecting verification');
+            return res.sendStatus(403);
+        }
 
         if (mode === 'subscribe' && token === configuredToken) {
             logger.info('Webhook verified');
@@ -69,11 +97,9 @@ router.post('/', async (req, res) => {
             logger.warn('Webhook signature validation failed - rejecting request');
             return res.sendStatus(403);
         }
-    } else if (process.env.NODE_ENV === 'production') {
-        logger.error('CRITICAL: No app secret configured in production - rejecting webhook');
-        return res.sendStatus(403);
     } else {
-        logger.warn('No app secret configured - signature validation skipped (DEV only)');
+        logger.error('No app secret configured — rejecting webhook. Configure wa_app_secret in Settings.');
+        return res.sendStatus(403);
     }
 
     const body = req.body;

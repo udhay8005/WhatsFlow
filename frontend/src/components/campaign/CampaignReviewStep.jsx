@@ -1,3 +1,13 @@
+/**
+ * @file CampaignReviewStep.jsx
+ * @description Step 3 of the campaign wizard. Displays a full review summary —
+ *              campaign name, template, contact count, media preview, and
+ *              scheduled time — before the user launches or saves as draft.
+ * @module components/campaign/CampaignReviewStep
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useState } from 'react';
 import { Film, Image, AlertTriangle, Send, Eye, X } from 'lucide-react';
 

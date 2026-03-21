@@ -1,3 +1,13 @@
+/**
+ * @file App.jsx
+ * @description Root application component. Wraps the entire UI in an ErrorBoundary,
+ *              the global SocketProvider (single WebSocket connection), BrowserRouter,
+ *              and defines all client-side routes. Unknown routes redirect to "/".
+ * @module pages/App
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -6,6 +16,7 @@ import Settings from './pages/Settings';
 import NewCampaign from './pages/NewCampaign';
 import History from './pages/History';
 import Blacklist from './pages/Blacklist';
+import { SocketProvider } from './contexts/SocketContext';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -50,19 +61,21 @@ class ErrorBoundary extends React.Component {
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="campaigns/new" element={<NewCampaign />} />
-            <Route path="campaigns/:id/edit" element={<NewCampaign />} />
-            <Route path="history" element={<History />} />
-            <Route path="blacklist" element={<Blacklist />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <SocketProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="campaigns/new" element={<NewCampaign />} />
+              <Route path="campaigns/:id/edit" element={<NewCampaign />} />
+              <Route path="history" element={<History />} />
+              <Route path="blacklist" element={<Blacklist />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </SocketProvider>
     </ErrorBoundary>
   );
 }

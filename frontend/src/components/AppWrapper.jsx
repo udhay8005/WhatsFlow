@@ -1,3 +1,13 @@
+/**
+ * @file AppWrapper.jsx
+ * @description Top-level wrapper component that provides the ToastProvider
+ *              to the entire React tree, enabling toast notifications from any
+ *              descendant component via the useToast() hook.
+ * @module components/AppWrapper
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { Component } from 'react';
 import { ToastProvider } from './Toast';
 

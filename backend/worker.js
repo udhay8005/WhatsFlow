@@ -1,3 +1,15 @@
+/**
+ * @file worker.js
+ * @description Background queue processor for outbound WhatsApp messages.
+ *              Polls the database for queued messages, respects campaign rate limits,
+ *              enforces blacklist exclusion via SQL JOIN, attempts WhatsApp delivery
+ *              with automatic email fallback on eligible error codes, and uses
+ *              exponential backoff on DB errors to prevent runaway polling.
+ * @module backend/worker
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const db = require('./database');
 const whatsappService = require('./services/whatsappService');
 const emailService = require('./services/emailService');
@@ -10,8 +22,14 @@ const WHATSAPP_ERROR_CODES_FOR_FALLBACK = [131026, 131047, 131051, 131031]; // N
 
 let isRunning = false;
 let errorCount = 0;
-const MAX_SEQUENTIAL_ERRORS = 10;
 
+/**
+ * @function startWorker
+ * @description Initialises and starts the message queue processor.
+ *              Resets any messages stuck in 'processing' status (from a prior crash)
+ *              back to 'queued' before beginning the first poll cycle.
+ * @param {import('socket.io').Server} io - Socket.IO server instance for real-time updates.
+ */
 function startWorker(io) {
     if (isRunning) return;
 
@@ -26,12 +44,22 @@ function startWorker(io) {
     });
 }
 
+/**
+ * @function stopWorker
+ * @description Signals the queue processor to stop after the current cycle completes.
+ *              Safe to call from graceful-shutdown handlers.
+ */
 function stopWorker() {
     isRunning = false;
     logger.info('Stopped queue processor');
 }
 
-// Helper to get rate limit
+/**
+ * @function getRateLimit
+ * @description Reads the configured max_tps value from app_config, decrypts it,
+ *              and clamps it between 1 and 100. Falls back to 1 TPS on any error.
+ * @param {function(number): void} cb - Callback receiving the effective TPS value.
+ */
 function getRateLimit(cb) {
     db.get("SELECT value FROM app_config WHERE key = 'max_tps'", (err, row) => {
         if (err || !row) return cb(1);
@@ -45,21 +73,31 @@ function getRateLimit(cb) {
     });
 }
 
+/**
+ * @function processQueue
+ * @description Core polling loop. Fetches one eligible message per tick, acquires
+ *              an optimistic lock (queued → processing), then delegates to
+ *              proceedToSend(). Reschedules itself via setTimeout for rate-limiting
+ *              and uses exponential backoff on DB errors.
+ * @param {import('socket.io').Server} io - Socket.IO server instance.
+ */
 function processQueue(io) {
     if (!isRunning) return;
 
     // 1. Get dynamic rate limit first
     getRateLimit((currentTps) => {
 
-        // 2. Fetch next queued or retry-eligible message
+        // 2. Fetch next queued or retry-eligible message (excluding blacklisted contacts)
         const sql = `
-            SELECT m.*, c.template_name, c.name as campaign_name, c.media_id, c.media_type, ct.email, ct.email_opt_in 
+            SELECT m.*, c.template_name, c.name as campaign_name, c.media_id, c.media_type, ct.email, ct.email_opt_in
             FROM messages m
             JOIN campaigns c ON m.campaign_id = c.id
-            LEFT JOIN contacts ct ON m.contact_id = ct.id 
-            WHERE m.status IN ('queued', 'processing') 
+            LEFT JOIN contacts ct ON m.contact_id = ct.id
+            LEFT JOIN blacklist bl ON m.phone_number = bl.phone_number
+            WHERE m.status IN ('queued', 'processing')
               AND m.retry_count < m.max_retries
               AND c.status = 'active'
+              AND bl.phone_number IS NULL
               AND (c.scheduled_at IS NULL OR datetime(c.scheduled_at) <= datetime('now'))
             ORDER BY m.id ASC
             LIMIT 1
@@ -69,12 +107,10 @@ function processQueue(io) {
             if (err) {
                 logger.error('DB Error:', err);
                 errorCount++;
-                if (errorCount >= MAX_SEQUENTIAL_ERRORS) {
-                    logger.error('Too many sequential errors, stopping worker');
-                    stopWorker();
-                    return;
-                }
-                setTimeout(() => processQueue(io), POLL_INTERVAL * 2);
+                // Exponential backoff: 4s, 8s, 16s, ... up to 60s
+                const backoffDelay = Math.min(POLL_INTERVAL * Math.pow(2, errorCount), 60000);
+                logger.warn(`DB error count: ${errorCount}, retrying in ${backoffDelay}ms`);
+                setTimeout(() => processQueue(io), backoffDelay);
                 return;
             }
 
@@ -107,13 +143,30 @@ function processQueue(io) {
                 }
 
                 // Lock acquired, proceed to send
-                proceedToSend(msg, currentTps, io);
+                proceedToSend(msg, currentTps, io).catch(err => {
+                    logger.error(`Unhandled error in proceedToSend for Msg ${msg.id}:`, err);
+                    // Mark as failed to prevent infinite loop
+                    db.run("UPDATE messages SET status='failed', error_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        ['Internal processing error', msg.id]);
+                    setTimeout(() => processQueue(io), POLL_INTERVAL);
+                });
             });
 
         });
     });
 }
 
+/**
+ * @function proceedToSend
+ * @description Sends a single message via WhatsApp. On eligible failure codes
+ *              (not on WhatsApp, invalid number, etc.) attempts an email fallback
+ *              if the contact has an email and has opted in. Updates message status
+ *              and campaign counters in the database after each outcome.
+ * @param {object} msg - Message row joined with campaign, contact, and blacklist data.
+ * @param {number} currentTps - Current rate limit (transactions per second).
+ * @param {import('socket.io').Server} io - Socket.IO server instance.
+ * @returns {Promise<void>}
+ */
 async function proceedToSend(msg, currentTps, io) {
     io.emit('status_update', { id: msg.wa_message_id || msg.id, status: 'processing' });
 
@@ -189,7 +242,7 @@ async function proceedToSend(msg, currentTps, io) {
             }
         }
 
-        const shouldRetry = msg.retry_count < msg.max_retries - 1 && !isFallbackEligible;
+        const shouldRetry = msg.retry_count < msg.max_retries && !isFallbackEligible;
         const newStatus = shouldRetry ? 'queued' : finalStatus;
         const newRetryCount = msg.retry_count + 1;
 
@@ -220,7 +273,14 @@ async function proceedToSend(msg, currentTps, io) {
 }
 // End proceedToSend
 
-// Helper to update campaign statistics
+/**
+ * @function updateCampaignStats
+ * @description Increments the success_count or failed_count column for a campaign
+ *              and emits a 'campaign_progress' Socket.IO event to update the UI.
+ * @param {number} campaignId - Database ID of the campaign to update.
+ * @param {'success'|'failed'} type - Which counter to increment.
+ * @param {import('socket.io').Server} io - Socket.IO server instance.
+ */
 function updateCampaignStats(campaignId, type, io) {
     // secure update using parameterized query logic
     const isSuccess = type === 'success';

@@ -1,3 +1,15 @@
+/**
+ * @file settings.js
+ * @description Application settings REST API routes.
+ *              Manages WhatsApp credentials, SMTP configuration, and operational
+ *              settings. All credential values are encrypted before storage via
+ *              cryptoService. Includes SMTP connection testing, tunnel status,
+ *              history/log clearing, and database optimisation endpoints.
+ * @module backend/routes/settings
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const router = express.Router();
 const db = require('../database');

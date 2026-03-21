@@ -62,8 +62,16 @@
       "output": "dist"
     },
     "win": {
-      "target": "portable",
-      "forceCodeSigning": false
+      "target": ["portable", "nsis"],
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "icon": "frontend/public/logo.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   }
 }

@@ -1,3 +1,15 @@
+/**
+ * @file server.js
+ * @description Express HTTP server entry point for WhatsFlow backend.
+ *              Initialises middleware (Helmet CSP, CORS, compression, rate limiting),
+ *              mounts all API routes with API-key authentication, starts the
+ *              message-queue worker, cron jobs, optional LocalTunnel, and handles
+ *              graceful shutdown on SIGTERM / SIGINT.
+ * @module backend/server
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -6,6 +18,7 @@ const rateLimit = require('express-rate-limit');
 const db = require('./database');
 const logger = require('./utils/logger');
 const { errorHandler } = require('./middleware/errorHandler');
+const { apiAuth, issueToken } = require('./middleware/auth');
 
 const app = express();
 // Ensure uploads directory exists
@@ -31,9 +44,18 @@ const helmet = require('helmet');
 const compression = require('compression');
 
 // Middleware
-// Security headers
+// Security headers with Content Security Policy
 app.use(helmet({
-    contentSecurityPolicy: false, // Disabled for local dev flexibility
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "ws://localhost:3000", "http://localhost:3000", "ws://localhost:5173", "http://localhost:5173"],
+            fontSrc: ["'self'"],
+        }
+    }
 }));
 // Gzip compression
 app.use(compression());
@@ -78,9 +100,13 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Auth token endpoint (localhost only, no API key needed)
+app.get('/auth/token', issueToken);
+
 // API Routes
 app.use('/api/', apiLimiter); // Apply rate limiting to all /api/* routes
-app.use('/webhook', require('./routes/webhook'));
+app.use('/api/', apiAuth); // Require API key for all /api/* routes
+app.use('/webhook', require('./routes/webhook')); // Webhook has its own HMAC auth
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/media', require('./routes/media'));
@@ -131,25 +157,28 @@ io.on('connection', (socket) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-    logger.info('SIGTERM received, closing server gracefully');
-    await stopTunnel(); // Close tunnel first
+/**
+ * @function gracefulShutdown
+ * @description Stops all running services (tunnel, worker, database, HTTP server)
+ *              in order before exiting the process. Invoked on SIGTERM and SIGINT.
+ * @param {string} signal - The OS signal that triggered shutdown (e.g. 'SIGTERM').
+ * @returns {Promise<void>}
+ */
+async function gracefulShutdown(signal) {
+    logger.info(`${signal} received, closing server gracefully`);
+    await stopTunnel();
     stopWorker();
+    db.close((err) => {
+        if (err) logger.error('Error closing database:', err);
+        else logger.info('Database connection closed');
+    });
     server.close(() => {
         logger.info('HTTP server closed');
         process.exit(0);
     });
-});
+}
 
-process.on('SIGINT', async () => {
-    logger.info('SIGINT received, closing server gracefully');
-    await stopTunnel(); // Close tunnel first
-    stopWorker();
-    server.close(() => {
-        logger.info('HTTP server closed');
-        process.exit(0);
-    });
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = { app, server, io };

@@ -1,10 +1,23 @@
+/**
+ * @file Blacklist.jsx
+ * @description Blacklist management page. Allows operators to block and unblock
+ *              phone numbers from receiving WhatsApp campaign messages. Supports
+ *              adding a block reason and filtering the blocked-numbers list by search.
+ * @module pages/Blacklist
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { Trash2, Plus, Search, ShieldAlert } from 'lucide-react';
+import { useToast } from '../components/Toast';
 
 export default function Blacklist() {
+    const { addToast } = useToast();
     const [blacklist, setBlacklist] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [blocking, setBlocking] = useState(false);
     const [newPhone, setNewPhone] = useState('');
     const [reason, setReason] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -15,10 +28,10 @@ export default function Blacklist() {
 
     const fetchBlacklist = async () => {
         try {
-            const res = await apiService.getBlacklist(); // Need to add this to api.ts
+            const res = await apiService.getBlacklist();
             setBlacklist(res.data);
         } catch (err) {
-            console.error(err);
+            addToast('Failed to load blacklist', 'error');
         } finally {
             setLoading(false);
         }
@@ -26,23 +39,28 @@ export default function Blacklist() {
 
     const handleAdd = async (e) => {
         e.preventDefault();
+        setBlocking(true);
         try {
             await apiService.addToBlacklist(newPhone, reason);
             setNewPhone('');
             setReason('');
+            addToast('Number blocked successfully', 'success');
             fetchBlacklist();
         } catch (err) {
-            alert('Failed to add number');
+            addToast('Failed to block number', 'error');
+        } finally {
+            setBlocking(false);
         }
     };
 
     const handleDelete = async (phone) => {
-        if (!confirm(`Unblock ${phone}?`)) return;
+        if (!window.confirm(`Unblock ${phone}?`)) return;
         try {
             await apiService.removeFromBlacklist(phone);
+            addToast('Number unblocked', 'success');
             fetchBlacklist();
         } catch (err) {
-            alert('Failed to remove');
+            addToast('Failed to unblock number', 'error');
         }
     };
 
@@ -76,9 +94,10 @@ export default function Blacklist() {
                     />
                     <button
                         type="submit"
-                        className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                        disabled={blocking}
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
                     >
-                        <Plus size={18} /> Block
+                        <Plus size={18} /> {blocking ? 'Blocking...' : 'Block'}
                     </button>
                 </form>
             </div>

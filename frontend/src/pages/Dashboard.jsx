@@ -1,12 +1,24 @@
+/**
+ * @file Dashboard.jsx
+ * @description Main dashboard page. Displays aggregate campaign statistics,
+ *              a 7-day delivery trend chart, a message status distribution chart,
+ *              and a recent campaigns table with inline pause/resume/edit controls.
+ *              Subscribes to real-time Socket.IO 'campaign_progress' events.
+ * @module pages/Dashboard
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Activity, Send, Users, AlertTriangle, Plus, Pause, Play, TrendingUp, Edit } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { apiService } from '../services/api';
-import { io } from 'socket.io-client';
+import { useSocket } from '../contexts/SocketContext';
 import DeliveryTrendChart from '../components/charts/DeliveryTrendChart';
 import StatusDistributionChart from '../components/charts/StatusDistributionChart';
 
 export default function Dashboard() {
+    const { socket } = useSocket();
     const [stats, setStats] = useState({ campaigns: 0, sent: 0, failed: 0 });
     const [recent, setRecent] = useState([]);
     const [trendData, setTrendData] = useState([]);
@@ -15,12 +27,10 @@ export default function Dashboard() {
     useEffect(() => {
         loadData();
 
-        // Connect to Socket.IO
-        const socket = io('http://localhost:3000');
+        if (!socket) return;
 
-        socket.on('campaign_progress', (data) => {
-            // ... existing socket logic
-            loadData(); // Reload trend data on progress
+        const onProgress = (data) => {
+            loadData();
             setRecent(prev => prev.map(c => {
                 if (c.id === data.id) {
                     return {
@@ -32,20 +42,19 @@ export default function Dashboard() {
                 return c;
             }));
 
-            // Optional: Update global stats if needed, but reloading might be safer or just increment
             setStats(prev => ({
                 ...prev,
                 sent: data.type === 'success' ? prev.sent + 1 : prev.sent,
                 failed: data.type === 'failed' ? prev.failed + 1 : prev.failed
             }));
-        });
+        };
 
-        socket.on('status_update', (data) => {
-            // Basic toast or notification could go here
-        });
+        socket.on('campaign_progress', onProgress);
 
-        return () => socket.disconnect();
-    }, []);
+        return () => {
+            socket.off('campaign_progress', onProgress);
+        };
+    }, [socket]);
 
     const loadData = async () => {
         try {
@@ -227,9 +236,14 @@ function StatCard({ icon, label, value, color }) {
 function StatusBadge({ status }) {
     const styles = {
         draft: 'bg-gray-700 text-gray-300',
+        active: 'bg-green-900 text-green-300',
+        paused: 'bg-yellow-900 text-yellow-300',
         processing: 'bg-blue-900 text-blue-300',
         completed: 'bg-green-900 text-green-300',
         failed: 'bg-red-900 text-red-300',
+        sent: 'bg-green-900 text-green-300',
+        delivered: 'bg-teal-900 text-teal-300',
+        read: 'bg-cyan-900 text-cyan-300',
     };
     return (
         <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${styles[status] || styles.draft}`}>

@@ -1,3 +1,13 @@
+/**
+ * @file whatsappService.js
+ * @description Meta WhatsApp Business API integration service.
+ *              Handles template message sending, media upload, and
+ *              approved template retrieval via Graph API v19.0.
+ * @module backend/services/whatsappService
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const axios = require('axios');
 const db = require('../database');
 const cryptoService = require('./cryptoService');
@@ -8,7 +18,12 @@ const logger = require('../utils/logger');
 const GRAPH_VERSION = process.env.WA_API_VERSION || 'v19.0';
 const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// Helper: Get Credentials from DB
+/**
+ * @function getCredentials
+ * @description Retrieves and decrypts WhatsApp API credentials from the database.
+ * @returns {Promise<{wa_access_token: string, wa_phone_id: string, wa_waba_id: string}>}
+ * @throws {Error} If credentials are not yet configured.
+ */
 async function getCredentials() {
     return new Promise((resolve, reject) => {
         db.all("SELECT key, value FROM app_config WHERE key IN ('wa_access_token', 'wa_phone_id', 'wa_waba_id')", [], (err, rows) => {
@@ -27,7 +42,15 @@ async function getCredentials() {
 }
 
 const whatsappService = {
-    // Upload Media to WhatsApp (Returns media_id)
+    /**
+     * @function uploadMedia
+     * @description Uploads a local file to the WhatsApp media endpoint and
+     *              returns the hosted media ID for use in template messages.
+     * @param {string} filePath - Absolute path to the temporary upload file.
+     * @param {string} mimeType - Detected MIME type (image/jpeg, image/png, video/mp4).
+     * @returns {Promise<string>} The WhatsApp media ID.
+     * @throws {Error} On API failure or credential error.
+     */
     async uploadMedia(filePath, mimeType) {
         const creds = await getCredentials();
         const url = `${BASE_URL}/${creds.wa_phone_id}/media`;
@@ -56,7 +79,19 @@ const whatsappService = {
         }
     },
 
-    // Send a Template Message (with optional media)
+    /**
+     * @function sendMessage
+     * @description Sends a WhatsApp template message to a single recipient.
+     *              Optionally prepends a HEADER component when mediaId is provided.
+     * @param {string} to - Recipient phone number in E.164 format.
+     * @param {string} templateName - Approved template name.
+     * @param {string} languageCode - Language code (e.g. 'en_US').
+     * @param {Array<object>} components - Template body/header parameter components.
+     * @param {string|null} [mediaId] - WhatsApp media ID for header attachment.
+     * @param {string|null} [mediaType] - 'image' or 'video'.
+     * @returns {Promise<{messages: Array<{id: string}>}>} API response with message IDs.
+     * @throws {Error} On API failure.
+     */
     async sendMessage(to, templateName, languageCode, components, mediaId, mediaType) {
         const creds = await getCredentials();
         const url = `${BASE_URL}/${creds.wa_phone_id}/messages`;
@@ -101,7 +136,12 @@ const whatsappService = {
         }
     },
 
-    // Fetch Templates (for UI dropdown)
+    /**
+     * @function getTemplates
+     * @description Fetches all approved message templates from the WABA.
+     * @returns {Promise<Array<object>>} Array of template objects from Meta.
+     * @throws {Error} If WABA ID is missing or API call fails.
+     */
     async getTemplates() {
         const creds = await getCredentials();
         // WABA ID is optional if searching via Phone ID, but better to use WABA ID for templates

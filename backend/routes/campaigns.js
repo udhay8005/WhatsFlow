@@ -1,3 +1,15 @@
+/**
+ * @file campaigns.js
+ * @description Campaign management REST API routes.
+ *              Handles create, read, update, delete, pause, and resume operations
+ *              for bulk WhatsApp messaging campaigns.
+ *              Contact inserts are processed sequentially to respect SQLite's
+ *              single-writer constraint and avoid SQLITE_BUSY errors.
+ * @module backend/routes/campaigns
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
@@ -87,50 +99,49 @@ router.post('/', validateCampaignCreation, (req, res) => {
                 const errors = [];
                 let processed = 0;
 
-                // 2. Process Contacts (Async)
-                const processContacts = async () => {
-                    const BATCH_SIZE = 50;
-                    for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-                        const batch = contacts.slice(i, i + BATCH_SIZE);
+                // 2. Process Contacts sequentially (SQLite is single-writer)
+                const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-                        await Promise.all(batch.map(contact => {
-                            return new Promise((resolve, reject) => {
-                                const email = contact.email?.trim() || null;
-                                const paramsJson = JSON.stringify(contact.params || []);
+                const processOneContact = (contact) => {
+                    return new Promise((resolve, reject) => {
+                        let email = contact.email?.trim() || null;
+                        if (email && !EMAIL_REGEX.test(email)) email = null;
+                        const paramsJson = JSON.stringify(contact.params || []);
 
-                                // Upsert Contact
-                                db.run(
-                                    `INSERT INTO contacts (phone_number, email, email_opt_in) 
-                                     VALUES (?, ?, 1)
-                                     ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email, email_opt_in=1`,
-                                    [contact.phone, email],
-                                    (insertErr) => {
-                                        if (insertErr) {
-                                            errors.push({ phone: contact.phone, error: insertErr.message });
-                                            // Fail hard? Or log and continue? 
-                                            // The audit demanded rollback on failure, but usually bulk ops might tolerate partials?
-                                            // Let's assume critical failure for now to be safe as per audit.
-                                            return reject(insertErr);
+                        // Upsert Contact
+                        db.run(
+                            `INSERT INTO contacts (phone_number, email, email_opt_in)
+                             VALUES (?, ?, 1)
+                             ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email, email_opt_in=1`,
+                            [contact.phone, email],
+                            (insertErr) => {
+                                if (insertErr) {
+                                    errors.push({ phone: contact.phone, error: insertErr.message });
+                                    return reject(insertErr);
+                                }
+
+                                // Lookup ID and Insert Message
+                                db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (getErr, row) => {
+                                    if (getErr || !row) return reject(getErr || new Error('Contact not found'));
+
+                                    db.run(
+                                        `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
+                                        [campaignId, row.id, contact.phone, paramsJson],
+                                        (msgErr) => {
+                                            if (msgErr) return reject(msgErr);
+                                            processed++;
+                                            resolve();
                                         }
+                                    );
+                                });
+                            }
+                        );
+                    });
+                };
 
-                                        // Lookup ID and Insert Message
-                                        db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (getErr, row) => {
-                                            if (getErr || !row) return reject(getErr || new Error('Contact not found'));
-
-                                            db.run(
-                                                `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
-                                                [campaignId, row.id, contact.phone, paramsJson],
-                                                (msgErr) => {
-                                                    if (msgErr) return reject(msgErr);
-                                                    processed++;
-                                                    resolve();
-                                                }
-                                            );
-                                        });
-                                    }
-                                );
-                            });
-                        }));
+                const processContacts = async () => {
+                    for (const contact of contacts) {
+                        await processOneContact(contact);
                     }
                 };
 
@@ -215,8 +226,10 @@ router.put('/:id', (req, res) => {
         return;
     }
 
-    // Full Update (Re-create messages)
+    // Full Update (Re-create messages) — sequential writes for SQLite safety
     if (contacts) {
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
         db.serialize(() => {
             db.run("BEGIN TRANSACTION");
 
@@ -224,55 +237,56 @@ router.put('/:id', (req, res) => {
             db.run(
                 `UPDATE campaigns SET name=?, template_name=?, total_count=?, status=?, scheduled_at=?, media_id=?, media_type=? WHERE id=?`,
                 [name, templateName, contacts.length, status || 'active', scheduledAt || null, mediaId || null, mediaType || null, campaignId],
-                async function (err) {
+                function (err) {
                     if (err) {
                         db.run("ROLLBACK");
                         return res.status(500).json({ error: err.message });
                     }
 
                     // 2. Delete Old Messages
-                    db.run("DELETE FROM messages WHERE campaign_id = ?", [campaignId], async (err) => {
-                        if (err) {
+                    db.run("DELETE FROM messages WHERE campaign_id = ?", [campaignId], async (delErr) => {
+                        if (delErr) {
                             db.run("ROLLBACK");
                             return res.status(500).json({ error: "Failed to clear old messages" });
                         }
 
-                        // 3. Insert New Messages
+                        // 3. Insert New Messages sequentially
                         try {
-                            const BATCH_SIZE = 50;
-                            for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-                                const batch = contacts.slice(i, i + BATCH_SIZE);
-                                await Promise.all(batch.map(contact => {
-                                    return new Promise((resolve, reject) => {
-                                        const email = contact.email?.trim() || null;
-                                        const paramsJson = JSON.stringify(contact.params || []);
+                            for (const contact of contacts) {
+                                await new Promise((resolve, reject) => {
+                                    let email = contact.email?.trim() || null;
+                                    if (email && !EMAIL_REGEX.test(email)) email = null;
+                                    const paramsJson = JSON.stringify(contact.params || []);
 
-                                        // Upsert Contact (Simple handling)
-                                        db.run(
-                                            `INSERT OR IGNORE INTO contacts (phone_number, email) VALUES (?, ?)`,
-                                            [contact.phone, email],
-                                            function (err) {
-                                                // Get Contact ID
-                                                db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (err, row) => {
-                                                    const contactId = row ? row.id : null;
-                                                    db.run(
-                                                        `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
-                                                        [campaignId, contactId, contact.phone, paramsJson],
-                                                        (err) => {
-                                                            if (err) reject(err);
-                                                            else resolve();
-                                                        }
-                                                    );
-                                                });
-                                            }
-                                        );
-                                    });
-                                }));
+                                    db.run(
+                                        `INSERT OR IGNORE INTO contacts (phone_number, email) VALUES (?, ?)`,
+                                        [contact.phone, email],
+                                        function (upsertErr) {
+                                            if (upsertErr) return reject(upsertErr);
+                                            db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (getErr, row) => {
+                                                if (getErr) return reject(getErr);
+                                                const contactId = row ? row.id : null;
+                                                db.run(
+                                                    `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
+                                                    [campaignId, contactId, contact.phone, paramsJson],
+                                                    (msgErr) => {
+                                                        if (msgErr) reject(msgErr);
+                                                        else resolve();
+                                                    }
+                                                );
+                                            });
+                                        }
+                                    );
+                                });
                             }
 
-                            db.run("COMMIT");
-                            res.json({ success: true, id: campaignId, message: "Campaign updated" });
-
+                            db.run("COMMIT", (commitErr) => {
+                                if (commitErr) {
+                                    db.run("ROLLBACK");
+                                    return res.status(500).json({ error: commitErr.message });
+                                }
+                                res.json({ success: true, id: campaignId, message: "Campaign updated" });
+                            });
                         } catch (insertErr) {
                             db.run("ROLLBACK");
                             res.status(500).json({ error: insertErr.message });

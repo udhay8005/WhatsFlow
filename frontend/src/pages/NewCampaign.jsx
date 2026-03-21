@@ -1,3 +1,14 @@
+/**
+ * @file NewCampaign.jsx
+ * @description Multi-step campaign creation and editing page.
+ *              Steps: Campaign Details → Contact Upload → Review & Launch.
+ *              Supports draft saving, scheduled sends, media attachment, and
+ *              editing existing campaigns by loading data via route params.
+ * @module pages/NewCampaign
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { apiService } from '../services/api';

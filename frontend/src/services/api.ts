@@ -1,3 +1,14 @@
+/**
+ * @file api.ts
+ * @description Centralised Axios API client for WhatsFlow frontend.
+ *              Obtains a session API key from /auth/token on first request and
+ *              attaches it as X-API-Key to every subsequent request. Handles
+ *              timeout, network errors, and 403 key-expiry retries via interceptors.
+ * @module services/api
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 
 // Interfaces for API Responses
@@ -34,12 +45,39 @@ export interface CreateCampaignPayload {
     scheduledAt?: string | null;
 }
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 const api: AxiosInstance = axios.create({
-    baseURL: 'http://localhost:3000',
-    timeout: 10000,
+    baseURL: API_URL,
+    timeout: 30000,
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+// Fetch API key from local auth endpoint on startup
+let apiKeyPromise: Promise<string> | null = null;
+
+function fetchApiKey(): Promise<string> {
+    if (!apiKeyPromise) {
+        apiKeyPromise = axios.get(`${API_URL}/auth/token`)
+            .then(res => res.data.apiKey)
+            .catch(err => {
+                console.error('[API] Failed to fetch API key:', err.message);
+                apiKeyPromise = null; // Allow retry
+                return '';
+            });
+    }
+    return apiKeyPromise;
+}
+
+// Add request interceptor to attach API key
+api.interceptors.request.use(async (config) => {
+    const key = await fetchApiKey();
+    if (key) {
+        config.headers['X-API-Key'] = key;
+    }
+    return config;
 });
 
 // Add response interceptor for global error handling
@@ -52,6 +90,9 @@ api.interceptors.response.use(
         } else if (!error.response) {
             console.error('[API] Network error:', error.message);
             error.message = 'Cannot connect to server. Please ensure the backend is running.';
+        } else if (error.response.status === 403) {
+            console.error('[API] Auth error — retrying key fetch');
+            apiKeyPromise = null; // Force re-fetch
         } else if (error.response.status >= 500) {
             console.error('[API] Server error:', error.response.data);
             error.message = 'Server error. Please try again later.';
@@ -92,7 +133,13 @@ export const apiService = {
     // Stats
     getStatsDashboard: () => api.get('/api/stats/dashboard'),
     getStatsTrend: () => api.get('/api/stats/trend'),
-    getStatsDistribution: () => api.get('/api/stats/status-distribution')
+    getStatsDistribution: () => api.get('/api/stats/status-distribution'),
+
+    // Maintenance
+    getTunnelStatus: () => api.get('/api/settings/tunnel'),
+    clearLogs: () => api.post('/api/settings/clear-logs'),
+    cleanApp: () => api.post('/api/settings/clean-app'),
+    clearHistory: () => api.post('/api/settings/clear-history')
 };
 
 export default api;

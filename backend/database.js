@@ -1,3 +1,13 @@
+/**
+ * @file database.js
+ * @description SQLite database connection and schema initialization.
+ *              Enables WAL mode for concurrent read performance.
+ *              Auto-migrates missing columns on startup.
+ * @module backend/database
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const logger = require('./utils/logger');
@@ -23,6 +33,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
+/**
+ * @function initializeSchema
+ * @description Creates all database tables if they do not exist and runs
+ *              auto-migration ALTER statements for backward compatibility.
+ * @returns {void}
+ */
 function initializeSchema() {
     db.serialize(() => {
         // App Config

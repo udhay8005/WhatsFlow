@@ -1,3 +1,14 @@
+/**
+ * @file Layout.jsx
+ * @description Application shell component. Renders the persistent sidebar with
+ *              navigation links, brand logo, and a theme toggle button. Includes
+ *              a BackendStatus indicator that polls the /health endpoint every 30s.
+ *              The main content area renders child routes via React Router's Outlet.
+ * @module components/Layout
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { MessageSquare, Settings as SettingsIcon, LayoutDashboard, History, Send, Sun, Moon, ShieldAlert } from 'lucide-react';
@@ -17,12 +28,10 @@ export default function Layout() {
                         <span className="text-xl font-bold tracking-tight">WhatsFlow</span>
                     </div>
                     <button
-                        onClick={() => {
-                            console.log('[Layout] Theme toggle clicked');
-                            toggleTheme();
-                        }}
+                        onClick={toggleTheme}
                         className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                         title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+                        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
                     >
                         {theme === 'dark' ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} className="text-gray-700" />}
                     </button>
@@ -75,8 +84,7 @@ function BackendStatus() {
     React.useEffect(() => {
         const checkStatus = async () => {
             try {
-                // Simple health check via existing config endpoint
-                const res = await fetch('/api/settings/config');
+                const res = await fetch('/health');
                 setIsOnline(res.ok);
             } catch (e) {
                 setIsOnline(false);

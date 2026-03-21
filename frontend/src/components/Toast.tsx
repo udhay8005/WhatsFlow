@@ -1,3 +1,14 @@
+/**
+ * @file Toast.tsx
+ * @description Global toast notification system.
+ *              Provides ToastProvider, useToast hook, and ToastItem component.
+ *              Supports four severity levels: success, error, warning, info.
+ *              Toasts auto-dismiss after a configurable duration (default 4 s).
+ * @module components/Toast
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 

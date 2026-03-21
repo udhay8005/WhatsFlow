@@ -1,3 +1,13 @@
+/**
+ * @file CampaignDetailsStep.jsx
+ * @description Step 1 of the campaign wizard. Collects campaign name, WhatsApp
+ *              template selection (with variable preview), optional media attachment,
+ *              and optional scheduled send date/time.
+ * @module components/campaign/CampaignDetailsStep
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, X, ChevronDown, ChevronUp } from 'lucide-react';
 

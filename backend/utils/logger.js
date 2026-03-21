@@ -1,3 +1,12 @@
+/**
+ * @file logger.js
+ * @description Centralized Winston logger with file rotation and console output.
+ *              Writes structured JSON logs to error.log and combined.log.
+ * @module backend/utils/logger
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const winston = require('winston');
 const path = require('path');
 

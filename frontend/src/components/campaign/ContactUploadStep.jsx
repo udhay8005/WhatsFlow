@@ -1,3 +1,14 @@
+/**
+ * @file ContactUploadStep.jsx
+ * @description Step 2 of the campaign wizard. Handles contact list upload via
+ *              Excel/CSV file or manual entry. Runs pre-flight eligibility checks
+ *              against the blacklist and 24-hour frequency guard, then displays
+ *              a summary with warn/error counts before the user proceeds.
+ * @module components/campaign/ContactUploadStep
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React from 'react';
 import { Upload, FileSpreadsheet, X, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { apiService } from '../../services/api';

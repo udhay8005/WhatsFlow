@@ -1,14 +1,26 @@
+/**
+ * @file History.jsx
+ * @description Campaign history page. Lists all campaigns with expandable rows
+ *              showing per-message delivery details. Supports search filtering,
+ *              sort toggling, inline pause/resume/delete controls, and real-time
+ *              status updates via Socket.IO.
+ * @module pages/History
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import { RefreshCw, Search, ChevronDown, ChevronUp, Pause, Play, Trash2 } from 'lucide-react';
-import { io } from 'socket.io-client';
+import { useSocket } from '../contexts/SocketContext';
 import { useToast } from '../components/Toast';
 
 export default function History() {
     const { addToast } = useToast();
+    const { socket } = useSocket();
     const [campaigns, setCampaigns] = useState([]);
     const [expandedId, setExpandedId] = useState(null);
-    const [details, setDetails] = useState({}); // Cache for details
+    const [details, setDetails] = useState({});
     const [loading, setLoading] = useState(false);
 
     const loadCampaigns = React.useCallback(async (isManual = false) => {
@@ -27,8 +39,9 @@ export default function History() {
     useEffect(() => {
         loadCampaigns();
 
-        const socket = io();
-        socket.on('campaign_progress', (data) => {
+        if (!socket) return;
+
+        const onProgress = (data) => {
             setCampaigns(prev => prev.map(c => {
                 if (c.id === data.id) {
                     return {
@@ -39,10 +52,14 @@ export default function History() {
                 }
                 return c;
             }));
-        });
+        };
 
-        return () => socket.disconnect();
-    }, [loadCampaigns]);
+        socket.on('campaign_progress', onProgress);
+
+        return () => {
+            socket.off('campaign_progress', onProgress);
+        };
+    }, [loadCampaigns, socket]);
 
     const handleToggleStatus = async (e, id, action) => {
         e.stopPropagation(); // Prevent expansion
@@ -51,7 +68,7 @@ export default function History() {
             else await apiService.resumeCampaign(id);
             loadCampaigns();
         } catch (err) {
-            console.error("Failed to toggle status", err);
+            addToast('Failed to update campaign status', 'error');
         }
     };
 
@@ -79,7 +96,7 @@ export default function History() {
                 const res = await apiService.getCampaignDetails(id);
                 setDetails(prev => ({ ...prev, [id]: res.data.messages }));
             } catch (err) {
-                console.error(err);
+                addToast('Failed to load campaign details', 'error');
             }
         }
     };
@@ -101,6 +118,13 @@ export default function History() {
             </header>
 
             <div className="space-y-4">
+                {campaigns.length === 0 && !loading && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center shadow-sm">
+                        <p className="text-4xl mb-4">📋</p>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No campaigns yet</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Create your first campaign to see delivery history here.</p>
+                    </div>
+                )}
                 {campaigns.map(c => (
                     <div key={c.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                         {/* Header Row */}
@@ -215,10 +239,20 @@ export default function History() {
 
 function StatusBadge({ status }) {
     const styles = {
-        queued: 'text-gray-400',
-        processing: 'text-blue-400',
-        sent: 'text-green-400',
-        failed: 'text-red-400',
+        draft: 'bg-gray-700 text-gray-300',
+        active: 'bg-green-900 text-green-300',
+        paused: 'bg-yellow-900 text-yellow-300',
+        completed: 'bg-teal-900 text-teal-300',
+        processing: 'bg-blue-900 text-blue-300',
+        queued: 'bg-gray-800 text-gray-400',
+        sent: 'bg-green-900 text-green-300',
+        delivered: 'bg-teal-900 text-teal-300',
+        read: 'bg-cyan-900 text-cyan-300',
+        failed: 'bg-red-900 text-red-300',
     };
-    return <span className={`font-medium ${styles[status]}`}>{status}</span>;
+    return (
+        <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${styles[status] || 'bg-gray-700 text-gray-300'}`}>
+            {status}
+        </span>
+    );
 }

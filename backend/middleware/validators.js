@@ -1,3 +1,13 @@
+/**
+ * @file validators.js
+ * @description Express-validator rule chains for all API input validation.
+ *              Provides validateCampaignCreation and validateSettings middleware arrays.
+ *              Attach these arrays directly to route definitions.
+ * @module backend/middleware/validators
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const { body, validationResult } = require('express-validator');
 
 // Middleware to handle validation errors

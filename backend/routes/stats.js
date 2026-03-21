@@ -1,3 +1,14 @@
+/**
+ * @file stats.js
+ * @description Statistics REST API routes.
+ *              Provides aggregate dashboard counters, a 7-day delivery trend
+ *              (with zero-fill for missing days), and a message-status distribution
+ *              breakdown for charts and reporting.
+ * @module backend/routes/stats
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const router = express.Router();
 const db = require('../database');

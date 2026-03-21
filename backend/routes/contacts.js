@@ -1,3 +1,13 @@
+/**
+ * @file contacts.js
+ * @description Contact management REST API routes.
+ *              Handles blacklist add, list, remove, and pre-campaign
+ *              eligibility checks (blacklist + 24-hour frequency guard).
+ * @module backend/routes/contacts
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 const express = require('express');
 const router = express.Router();
 const db = require('../database');

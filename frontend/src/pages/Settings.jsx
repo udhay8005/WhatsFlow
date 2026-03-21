@@ -1,3 +1,14 @@
+/**
+ * @file Settings.jsx
+ * @description Application settings page. Organises configuration into tabbed
+ *              sections: WhatsApp API credentials, SMTP email fallback settings,
+ *              and operational controls (rate limit, tunnel status, history/log
+ *              clearing, app cleanup). All sensitive values are masked on display.
+ * @module pages/Settings
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Save, CheckCircle, Eye, EyeOff, MessageSquare, Mail, Zap } from 'lucide-react';
 import { apiService } from '../services/api';
@@ -39,12 +50,11 @@ export default function Settings() {
 
     const fetchTunnelUrl = async () => {
         try {
-            const res = await fetch('/api/settings/tunnel');
-            const data = await res.json();
-            setTunnelUrl(data.url);
-            setTunnelActive(data.active);
+            const res = await apiService.getTunnelStatus();
+            setTunnelUrl(res.data.url);
+            setTunnelActive(res.data.active);
         } catch (err) {
-            console.error('Failed to fetch tunnel URL:', err);
+            // Tunnel status is optional — silently ignore if not available
         }
     };
 
@@ -378,9 +388,8 @@ export default function Settings() {
                             onClick={async () => {
                                 if (!confirm('Are you sure you want to clear all log files?')) return;
                                 try {
-                                    const res = await fetch('/api/settings/clear-logs', { method: 'POST' });
-                                    const data = await res.json();
-                                    addToast(data.message || 'Logs cleared successfully', 'success');
+                                    const res = await apiService.clearLogs();
+                                    addToast(res.data.message || 'Logs cleared successfully', 'success');
                                 } catch (err) {
                                     addToast('Failed to clear logs', 'error');
                                 }
@@ -401,16 +410,15 @@ export default function Settings() {
                             onClick={async () => {
                                 if (!confirm('Clean app data? This will:\n- Clear all logs\n- Remove temporary files\n- Optimize database')) return;
                                 try {
-                                    const res = await fetch('/api/settings/clean-app', { method: 'POST' });
-                                    const data = await res.json();
-                                    addToast(data.message || 'App cleaned successfully', 'success');
+                                    const res = await apiService.cleanApp();
+                                    addToast(res.data.message || 'App cleaned successfully', 'success');
                                 } catch (err) {
                                     addToast('Failed to clean app', 'error');
                                 }
                             }}
                             className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium"
                         >
-                            🧹 Clean App
+                            Clean App
                         </button>
                     </div>
                 </div>

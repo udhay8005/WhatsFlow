@@ -1,7 +1,24 @@
+/**
+ * @file ThemeContext.jsx
+ * @description Global theme context. Persists the user's light/dark preference
+ *              to localStorage and applies the 'dark' class to the HTML root element.
+ *              An IIFE at module load time reads localStorage and sets the initial
+ *              class before React renders, preventing a flash of un-themed content.
+ * @module contexts/ThemeContext
+ * @author Udhaya Chandra SA
+ * @version 1.0.0
+ */
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ThemeContext = createContext();
 
+/**
+ * @function useTheme
+ * @description Hook to access the current theme and toggle function.
+ * @returns {{ theme: string, toggleTheme: function }} Theme context value.
+ * @throws {Error} If used outside of ThemeProvider.
+ */
 export const useTheme = () => {
     const context = useContext(ThemeContext);
     if (!context) {
@@ -10,23 +27,29 @@ export const useTheme = () => {
     return context;
 };
 
-// Initialize theme immediately to prevent flash
+// Apply initial theme class immediately to prevent flash of un-themed content
 if (typeof window !== 'undefined') {
     try {
         const saved = localStorage.getItem('whatsflow-theme');
-        // Default to dark if nothing saved
         const theme = saved || 'dark';
         if (theme === 'dark') {
             document.documentElement.classList.add('dark');
         } else {
             document.documentElement.classList.remove('dark');
         }
-        console.log('[ThemeInit] Initialized theme to:', theme);
     } catch (e) {
-        console.error('[ThemeInit] Error accessing localStorage:', e);
+        // localStorage unavailable (private browsing or storage quota exceeded) — default to dark
+        document.documentElement.classList.add('dark');
     }
 }
 
+/**
+ * @function ThemeProvider
+ * @description Provides theme state and toggleTheme to all descendant components.
+ *              Persists the selected theme in localStorage on every change.
+ * @param {{ children: React.ReactNode }} props
+ * @returns {JSX.Element}
+ */
 export const ThemeProvider = ({ children }) => {
     const [theme, setTheme] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -37,32 +60,21 @@ export const ThemeProvider = ({ children }) => {
     });
 
     useEffect(() => {
-        console.log('[ThemeContext] Effect Triggered. Theme is:', theme);
         try {
             localStorage.setItem('whatsflow-theme', theme);
             const root = window.document.documentElement;
-
-            console.log('[ThemeContext] Creating class list update...');
             if (theme === 'dark') {
-                console.log('[ThemeContext] ADDING dark class');
                 root.classList.add('dark');
             } else {
-                console.log('[ThemeContext] REMOVING dark class');
                 root.classList.remove('dark');
             }
-            console.log('[ThemeContext] Current HTML classes:', root.className);
         } catch (error) {
-            console.error('[ThemeContext] Error in useEffect:', error);
+            // Non-fatal: theme will still apply in memory for this session
         }
     }, [theme]);
 
     const toggleTheme = () => {
-        console.log('[ThemeContext] toggleTheme function called. Current:', theme);
-        setTheme(prev => {
-            const newTheme = prev === 'dark' ? 'light' : 'dark';
-            console.log('[ThemeContext] Setting theme to:', newTheme);
-            return newTheme;
-        });
+        setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
     };
 
     return (
