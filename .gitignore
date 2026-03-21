@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+database.sqlite
+database.test.sqlite
+.env
+logs/
+uploads/
+*.log
+.vscode/
+backend/logs/
+backend/uploads/
+frontend/node_modules/
+frontend/dist/
+backups/

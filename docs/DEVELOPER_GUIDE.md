@@ -1,0 +1,647 @@
+# WhatsFlow - Developer Guide
+
+**Version:** 1.0.0  
+**Target Audience:** Developers contributing to or maintaining WhatsFlow
+
+---
+
+## Table of Contents
+
+1. [Development Environment Setup](#development-environment-setup)
+2. [Project Structure](#project-structure)
+3. [Development Workflow](#development-workflow)
+4. [Code Standards](#code-standards)
+5. [Testing Guide](#testing-guide)
+6. [Debugging](#debugging)
+7. [Common Development Tasks](#common-development-tasks)
+8. [Build and Distribution](#build-and-distribution)
+9. [Troubleshooting](#troubleshooting)
+
+---
+
+## 1. Development Environment Setup
+
+### Prerequisites
+- **Node.js:** 18.x or higher
+- **npm:** 9.x or higher
+- **Windows:** 10/11 (primary platform)
+- **Git:** For version control
+
+### Initial Setup
+
+```powershell
+# 1. Clone repository
+git clone https://github.com/your-repo/whatsflow.git
+cd whatsflow
+
+# 2. Install root dependencies
+npm install
+
+# 3. Install frontend dependencies
+cd frontend
+npm install
+cd ..
+
+# 4. Verify installation
+npm run test
+```
+
+### Environment Variables
+
+Create `.env` file in root (optional, for development):
+```bash
+NODE_ENV=development
+PORT=3000
+LOG_LEVEL=debug
+```
+
+### IDE Setup (VS Code Recommended)
+
+**Recommended Extensions:**
+- ESLint
+- Prettier
+- SQLite Viewer
+- Thunder Client (API testing)
+
+**Settings (`.vscode/settings.json`):**
+```json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
+```
+
+---
+
+## 2. Project Structure
+
+```
+whatsflow/
+├── backend/                    # Express.js Backend
+│   ├── __tests__/             # Backend unit tests
+│   │   ├── integration/       # Integration tests
+│   │   ├── services/          # Service tests
+│   │   ├── campaigns.test.js
+│   │   ├── webhook.test.js
+│   │   ├── stats.test.js
+│   │   ├── media.test.js
+│   │   └── errorHandler.test.js
+│   ├── middleware/            # Express middleware
+│   │   ├── errorHandler.js   # Global error handler
+│   │   └── validators.js     # Input validation rules
+│   ├── routes/                # API endpoints
+│   │   ├── campaigns.js
+│   │   ├── media.js
+│   │   ├── settings.js
+│   │   ├── stats.js
+│   │   └── webhook.js
+│   ├── services/              # Business logic
+│   │   ├── cryptoService.js  # Encryption/decryption
+│   │   ├── emailService.js   # SMTP email
+│   │   └── whatsappService.js # WhatsApp API
+│   ├── utils/                 # Utilities
+│   │   └── logger.js         # Winston logger
+│   ├── cron.js                # Scheduled tasks
+│   ├── database.js            # SQLite setup
+│   ├── server.js              # Express app
+│   └── worker.js              # Message queue processor
+│
+├── frontend/                   # React Frontend
+│   ├── src/
+│   │   ├── assets/            # Images, fonts
+│   │   ├── components/        # Reusable components
+│   │   │   ├── Layout.jsx    # App shell (sidebar, header)
+│   │   │   └── Toast.jsx     # Notification system
+│   │   ├── contexts/          # React Context API
+│   │   │   ├── ThemeContext.jsx  # Dark mode state
+│   │   │   └── ToastContext.jsx  # Toast notifications
+│   │   ├── pages/             # Route components
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── NewCampaign.jsx
+│   │   │   ├── History.jsx
+│   │   │   └── Settings.jsx
+│   │   ├── utils/             # Frontend utilities
+│   │   │   └── excelParser.ts # Excel parsing logic
+│   │   ├── App.jsx            # Root component
+│   │   └── main.jsx           # Entry point
+│   ├── dist/                  # Production build output
+│   ├── index.html             # HTML template
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── vite.config.js
+│
+├── electron/                   # Electron Main Process
+│   ├── main.js                # Electron entry
+│   └── preload.js             # Preloader script
+│
+├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── DEVELOPER_GUIDE.md (this file)
+│   ├── USER_GUIDE.md
+│   ├── API_REFERENCE.md
+│   └── DEPLOYMENT.md
+│
+├── tests/                      # E2E Tests
+│   └── e2e/
+│       └── campaign_flow.spec.js
+│
+├── scripts/                    # Utility scripts
+│
+├── database.sqlite             # Production database
+├── jest.config.js              # Jest configuration
+├── package.json                # Root dependencies
+├── playwright.config.js        # Playwright config
+└── README.md
+```
+
+---
+
+## 3. Development Workflow
+
+### Starting Development Environment
+
+```powershell
+# Method 1: All-in-one (recommended)
+npm run dev
+
+# This runs concurrently:
+# - Backend server (port 3000)
+# - Frontend dev server (port 5173)
+# - Electron app (loads from 5173)
+```
+
+```powershell
+# Method 2: Separate terminals (for debugging)
+# Terminal 1: Backend
+npm run server
+
+# Terminal 2: Frontend
+npm run frontend
+
+# Terminal 3: Electron
+npm start  # Waits for both servers, then opens app
+```
+
+### Hot Module Replacement (HMR)
+- **Frontend:** Vite provides instant HMR (changes reflect immediately)
+- **Backend:** No HMR - restart `npm run server` after changes
+- **Electron:** Restart `npm start` after changes to `electron/`
+
+### Making Changes
+
+#### Backend Changes
+1. Edit files in `backend/`
+2. Restart server: `Ctrl+C` → `npm run server`
+3. Test via Thunder Client or frontend
+
+#### Frontend Changes
+1. Edit files in `frontend/src/`
+2. Changes auto-reload in browser (HMR)
+3. Check browser console for errors
+
+#### Database Changes
+1. Modify schema in `backend/database.js`
+2. Delete `database.sqlite` (will be recreated)
+3. Restart backend
+
+---
+
+## 4. Code Standards
+
+### JavaScript Style Guide
+
+**General Rules:**
+- Use ES6+ features (`const`, `let`, arrow functions, async/await)
+- No `var` declarations
+- Use semicolons
+- 4-space indentation
+- Single quotes for strings
+
+**Naming Conventions:**
+```javascript
+// Variables & Functions: camelCase
+const userName = 'John'
+function getUserData() {}
+
+// Constants: UPPER_SNAKE_CASE
+const MAX_RETRIES = 3
+
+// Classes: PascalCase
+class CampaignService {}
+
+// Files: camelCase.js or PascalCase.jsx (React components)
+// excelParser.js, Dashboard.jsx
+```
+
+**Error Handling:**
+```javascript
+// ✅ Always use try-catch for async operations
+try {
+    const result = await service.doSomething()
+} catch (error) {
+    logger.error('Operation failed:', error)
+    // Handle error appropriately
+}
+
+// ✅ Use custom AppError for business logic errors
+throw new AppError('Invalid input', 400, 'VALIDATION_ERROR')
+```
+
+**Database Queries:**
+```javascript
+// ✅ Always use parameterized queries
+db.run('UPDATE campaigns SET status = ? WHERE id = ?', [status, id])
+
+// ❌ Never concatenate user input
+db.run(`UPDATE campaigns SET status = '${status}'`) // SQL INJECTION!
+```
+
+### React Best Practices
+
+**Component Structure:**
+```jsx
+// 1. Imports
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+// 2. Component definition
+export default function MyComponent({ prop1, prop2 }) {
+    // 3. Hooks
+    const [state, setState] = useState('')
+    const navigate = useNavigate()
+    
+    // 4. Effects
+    useEffect(() => {
+        // Side effects
+    }, [])
+    
+    // 5. Handlers
+    const handleClick = () => {
+        // Logic
+    }
+    
+    // 6. Render
+    return (
+        <div>...</div>
+    )
+}
+```
+
+**State Management:**
+- Use `useState` for component state
+- Use `useContext` for global state (Theme, Toast)
+- Avoid prop drilling (use Context)
+
+---
+
+## 5. Testing Guide
+
+### Running Tests
+
+```powershell
+# Run all tests with coverage
+npm run test
+
+# Run tests in watch mode
+npm run test:watchAll
+
+# Run specific test file
+npx jest backend/__tests__/webhook.test.js
+
+# Run backend tests only
+npm run test:unit
+
+# Run E2E tests (requires dev server running)
+npx playwright test
+```
+
+### Writing Unit Tests
+
+**Structure:**
+```javascript
+describe('Feature Name', () => {
+    beforeAll(() => {
+        // Setup once before all tests
+    })
+    
+    afterEach(() => {
+        // Cleanup after each test
+        jest.clearAllMocks()
+    })
+    
+    describe('Specific Behavior', () => {
+        it('should do something specific', () => {
+            // Arrange
+            const input = { ... }
+            
+            // Act
+            const result = myFunction(input)
+            
+            // Assert
+            expect(result).toBe(expected)
+        })
+    })
+})
+```
+
+**Mocking Dependencies:**
+```javascript
+// Mock database
+jest.mock('../database', () => ({
+    get: jest.fn(),
+    run: jest.fn(),
+}))
+
+// Use mock
+const db = require('../database')
+db.get.mockImplementation((sql, params, cb) => {
+    cb(null, { id: 1, name: 'Test' })
+})
+```
+
+### Test Coverage Goals
+- **Target:** 70%+ overall
+- **Critical paths:** 90%+ (auth, payment, security)
+- **Current:** 70.3% ✅
+
+---
+
+## 6. Debugging
+
+### Backend Debugging
+
+**Method 1: VS Code Debugger**
+
+Create `.vscode/launch.json`:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Backend",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/backend/server.js",
+      "env": {
+        "NODE_ENV": "development"
+      }
+    }
+  ]
+}
+```
+
+**Method 2: Console Logging**
+```javascript
+const logger = require('./utils/logger')
+
+logger.debug('Variable value:', myVar)
+logger.info('Process started')
+logger.warn('Potential issue')
+logger.error('Critical error', error)
+```
+
+**Method 3: Node Inspector**
+```powershell
+node --inspect backend/server.js
+# Open chrome://inspect in Chrome
+```
+
+### Frontend Debugging
+
+**Method 1: React DevTools**
+- Install Chrome extension
+- Inspect component state/props
+
+**Method 2: Browser Console**
+```javascript
+console.log('[MyComponent] State:', state)
+```
+
+**Method 3: Vite Debug Mode**
+```powershell
+DEBUG=vite:* npm run frontend
+```
+
+### Database Debugging
+
+**View Database:**
+```powershell
+# Install SQLite CLI
+# https://www.sqlite.org/download.html
+
+sqlite3 database.sqlite
+.tables
+SELECT * FROM campaigns;
+.schema messages
+.exit
+```
+
+**VS Code Extension:**
+- Install "SQLite Viewer"
+- Right-click `database.sqlite` → Open with SQLite Viewer
+
+---
+
+## 7. Common Development Tasks
+
+### Adding a New API Endpoint
+
+1. **Create route handler** (`backend/routes/myroute.js`):
+```javascript
+const express = require('express')
+const router = express.Router()
+
+router.get('/my-endpoint', (req, res) => {
+    res.json({ message: 'Success' })
+})
+
+module.exports = router
+```
+
+2. **Register route** (`backend/server.js`):
+```javascript
+app.use('/api/myroute', require('./routes/myroute'))
+```
+
+3. **Add validation** (if needed):
+```javascript
+const { body, validationResult } = require('express-validator')
+
+router.post('/my-endpoint',
+    body('field').notEmpty(),
+    (req, res) => {
+        const errors = validationResult(req)
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() })
+        }
+        // Process
+    }
+)
+```
+
+4. **Write tests** (`backend/__tests__/myroute.test.js`):
+```javascript
+const request = require('supertest')
+const app = require('../server').app
+
+describe('My Route', () => {
+    it('should return success', async () => {
+        const response = await request(app)
+            .get('/api/myroute/my-endpoint')
+            .expect(200)
+        
+        expect(response.body.message).toBe('Success')
+    })
+})
+```
+
+### Adding a New React Page
+
+1. **Create component** (`frontend/src/pages/MyPage.jsx`):
+```jsx
+import React from 'react'
+
+export default function MyPage() {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold">My Page</h1>
+        </div>
+    )
+}
+```
+
+2. **Add route** (`frontend/src/App.jsx`):
+```jsx
+import MyPage from './pages/MyPage'
+
+<Routes>
+    <Route path="/my-page" element={<MyPage />} />
+</Routes>
+```
+
+3. **Add navigation** (`frontend/src/components/Layout.jsx`):
+```jsx
+<NavItem to="/my-page" icon={<IconName />} label="My Page" />
+```
+
+### Modifying Database Schema
+
+1. **Update schema** (`backend/database.js`):
+```javascript
+db.run(`CREATE TABLE IF NOT EXISTS my_table (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+)`)
+```
+
+2. **Delete old database:**
+```powershell
+Remove-Item database.sqlite
+```
+
+3. **Restart backend** - new schema will be created
+
+---
+
+## 8. Build and Distribution
+
+### Frontend Production Build
+
+```powershell
+# Build optimized frontend
+npm run build:frontend
+
+# Output: frontend/dist/
+```
+
+### Electron Build
+
+```powershell
+# Build for Windows
+npm run build
+
+# Output: dist/WhatsFlow Setup.exe
+```
+
+**Build Configuration** (`package.json`):
+```json
+{
+  "build": {
+    "appId": "com.whatsflow.app",
+    "productName": "WhatsFlow",
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "sign": null
+    }
+  }
+}
+```
+
+---
+
+## 9. Troubleshooting
+
+### Common Issues
+
+#### Issue: "Module not found" error
+**Solution:**
+```powershell
+rm -rf node_modules package-lock.json
+npm install
+```
+
+#### Issue: Port 3000 already in use
+**Solution:**
+```powershell
+# Find process using port 3000
+Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess
+
+# Kill process or change port in .env
+```
+
+#### Issue: Database locked error
+**Solution:**
+Stop all running processes accessing the database, then:
+```powershell
+rm database.sqlite-wal database.sqlite-shm
+```
+
+#### Issue: Frontend not loading in Electron
+**Solution:**
+1. Check if frontend is built: `ls frontend/dist`
+2. Rebuild: `npm run build:frontend`
+3. Check Electron console (View → Toggle Developer Tools)
+
+#### Issue: Tests failing with "open handles"
+**Solution:**
+Close database connections properly:
+```javascript
+afterAll(() => {
+    db.close()
+})
+```
+
+---
+
+## Tips for Contributors
+
+1. **Always write tests** for new features
+2. **Update documentation** when changing APIs
+3. **Use descriptive commit messages:** "feat: Add media upload", "fix: SQL injection in campaigns"
+4. **Check test coverage** before committing: `npm run test`
+5. **Run linter:** `npm run lint` (if configured)
+
+---
+
+**For deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md)**  
+**For architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)**
