@@ -28,7 +28,12 @@ describe('Webhook Routes', () => {
 
     beforeAll(() => {
         app = express();
-        app.use(express.json()); // Add body parser middleware
+        // Do NOT add a global express.json() before the webhook router.
+        // In production (server.js) the global JSON parser is explicitly skipped
+        // for /webhook paths so the router's own parser — which has the verify
+        // callback that captures req.rawBody — always runs first.
+        // Replicating that here ensures req.rawBody is populated and the HMAC
+        // check can validate against the exact bytes sent by the client.
         mockIo = { emit: jest.fn() };
         app.set('io', mockIo);
         app.use('/webhook', webhookRouter);
@@ -37,6 +42,11 @@ describe('Webhook Routes', () => {
     afterEach(() => {
         jest.clearAllMocks();
     });
+
+    // Helper: generate HMAC-SHA256 signature over a JSON body
+    const generateSignature = (body, secret) => {
+        return 'sha256=' + crypto.createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
+    };
 
     describe('GET /webhook (Verification)', () => {
         it('should return 400 if params are missing', async () => {
@@ -85,10 +95,6 @@ describe('Webhook Routes', () => {
         const payload = { object: 'whatsapp_business_account', entry: [] };
         const appSecret = 'my_app_secret';
 
-        const generateSignature = (body, secret) => {
-            return 'sha256=' + crypto.createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
-        };
-
         it('should accept valid signature', async () => {
             db.get.mockImplementation((sql, cb) => {
                 if (sql.includes('wa_app_secret')) {
@@ -121,11 +127,7 @@ describe('Webhook Routes', () => {
                 .expect(403);
         });
 
-        it('should enforce app secret check in production', async () => {
-            // Mock production env
-            const originalEnv = process.env.NODE_ENV;
-            process.env.NODE_ENV = 'production';
-
+        it('should reject when no app secret is configured', async () => {
             // Mock DB returning no secret
             db.get.mockImplementation((sql, cb) => {
                 if (sql.includes('wa_app_secret')) {
@@ -137,14 +139,9 @@ describe('Webhook Routes', () => {
                 .post('/webhook')
                 .send(payload)
                 .expect(403);
-
-            process.env.NODE_ENV = originalEnv;
         });
 
         it('should process status updates', async () => {
-            // Skip verification for this test by not setting app secret (dev mode)
-            db.get.mockImplementation((sql, cb) => cb(null, undefined));
-
             const updatePayload = {
                 object: 'whatsapp_business_account',
                 entry: [{
@@ -160,11 +157,21 @@ describe('Webhook Routes', () => {
                 }]
             };
 
-            // Mock successful update
+            // Provide a valid app secret and signature so the HMAC check passes
+            db.get.mockImplementation((sql, cb) => {
+                if (sql.includes('wa_app_secret')) {
+                    cb(null, { value: appSecret });
+                }
+            });
+
+            const signature = generateSignature(updatePayload, appSecret);
+
+            // Mock successful DB update
             db.run.mockImplementation((sql, params, cb) => cb(null));
 
             await request(app)
                 .post('/webhook')
+                .set('x-hub-signature-256', signature)
                 .send(updatePayload)
                 .expect(200);
 

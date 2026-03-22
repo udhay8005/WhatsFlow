@@ -60,7 +60,7 @@ Error: Cannot find module 'electron'
 npm rebuild electron
 
 # Or reinstall electron
-npm install electron@33.0.0 --save-dev
+npm install electron@36.9.5 --save-dev
 ```
 
 ---
@@ -114,7 +114,9 @@ if (require.main === module || process.env.NODE_ENV === 'production') {
 
 ### Issue: "Port 3000 is already in use"
 
-> **Note (v1.0.1+):** The packaged app now handles this error gracefully — it logs the conflict and does not show a crash dialog. However, the app will not start correctly until the port is freed.
+> **Note (v1.0.1+):** The packaged app handles this error gracefully — it logs the conflict
+> and does not show a crash dialog. However, the app will not start correctly until the port
+> is freed.
 
 **Symptoms:**
 ```
@@ -123,7 +125,7 @@ Error: listen EADDRINUSE: address already in use :::3000
 
 **Solutions:**
 
-**Option 1: Kill the process**
+**Option 1: Kill the process using PowerShell**
 ```powershell
 # Find process ID
 Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
@@ -132,9 +134,13 @@ Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
 Stop-Process -Id <PID>
 ```
 
-**Option 2: Change port**
+**Option 2: Kill the process using npx (reliable cross-platform)**
 ```powershell
-# Set environment variable
+npx kill-port 3000
+```
+
+**Option 3: Change port**
+```powershell
 $env:PORT=3001
 npm run start:prod
 ```
@@ -151,7 +157,6 @@ npm run start:prod
 
 **Step 1: Check logs**
 ```powershell
-# Backend logs (if Winston is configured)
 Get-Content backend/logs/combined.log -Tail 50
 ```
 
@@ -164,7 +169,6 @@ win.webContents.openDevTools()
 
 **Step 3: Check database**
 ```powershell
-# Verify database file exists and is not corrupted
 sqlite3 database.sqlite "PRAGMA integrity_check;"
 # Should output: ok
 ```
@@ -213,7 +217,11 @@ Expected response:
 - Go to Settings → WhatsApp API
 - Re-enter all credentials
 - Click "Save Configuration"
-- Refresh page - checkmarks should turn green
+- Refresh page — checkmarks should turn green
+
+> **Note:** If credentials are not yet configured, the templates endpoint returns
+> `200 + { data: [], status: 'unconfigured' }` rather than an error — this is expected
+> behaviour before first-time setup.
 
 ---
 
@@ -264,33 +272,49 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 
 ## 4. Webhook Problems
 
+### Using the Settings UI Tunnel
+
+The easiest way to receive webhook events is through the built-in tunnel manager — no
+terminal commands needed:
+
+1. Open **Settings → WhatsApp API**.
+2. Scroll to the **Webhook Configuration** section.
+3. Click **Start Tunnel**.
+4. Wait for the status card to show **Active** (usually 3-10 seconds).
+5. Copy the displayed webhook URL using the **Copy** button.
+6. Paste it into Meta Developer Console → Your App → WhatsApp → Configuration → Webhook.
+7. Enter the same Verify Token and click **Verify and Save**.
+8. Subscribe to the `messages` field.
+
+If the tunnel was previously active but the app was restarted, click **Refresh** to update
+the displayed URL, then click **Start Tunnel** again.
+
+---
+
 ### Issue: "Webhook verification failed"
 
 **Symptoms:**
 - Meta Developer Console shows "Failed to verify webhook"
 - Error 403
 
-**Root Cause:** Verify token mismatch
+**Root Cause:** Verify token mismatch, or tunnel is not active
 
 **Solutions:**
 
-**Step 1: Test webhook manually**
+**Step 1: Confirm tunnel is Active**
+- Settings → WhatsApp API → Webhook Configuration → status must show "Active"
+- If not, click **Start Tunnel** and wait
+
+**Step 2: Test webhook manually**
 ```powershell
-curl "http://your-domain:3000/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=test123"
+curl "https://your-tunnel-url.loca.lt/webhook?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=test123"
 ```
 
 Expected response: `test123`
 
-**Step 2: Check verify token in Settings**
-- Settings → Webhook → Verify Token
+**Step 3: Check verify token in Settings**
+- Settings → WhatsApp API → Verify Token
 - Must match exactly what's in Meta Developer Console
-
-**Step 3: Ensure app is running**
-```powershell
-npm run start:prod
-# Or for localhost testing:
-ngrok http 3000
-```
 
 ---
 
@@ -309,8 +333,7 @@ ngrok http 3000
 - Get from Meta → App Settings → Basic → App Secret
 - Save configuration
 
-**Step 2: Verify signature calculation**
-Check backend logs for signature comparison:
+**Step 2: Check backend logs for signature comparison**
 ```
 Received: sha256=abc123...
 Expected: sha256=abc123...
@@ -348,6 +371,11 @@ Get-Process electron | Stop-Process -Force
 ```
 
 **Step 2: Delete WAL files**
+
+The `.wal` and `.shm` files are safe to delete when the app is fully stopped — they are
+SQLite Write-Ahead Logging auxiliary files that are recreated automatically on next start.
+Do not delete them while the app is running.
+
 ```powershell
 Remove-Item database.sqlite-wal, database.sqlite-shm
 ```
@@ -406,7 +434,6 @@ Move-Item database_recovered.sqlite database.sqlite -Force
 
 **If recovery fails, restore from backup:**
 ```powershell
-# Run BACKUP_DATABASE.bat regularly to have backups
 # Find latest backup in backups/ folder
 Copy-Item backups/database_20260120.sqlite database.sqlite
 ```
@@ -562,7 +589,7 @@ Get-Process | Where-Object {$_.ProcessName -like "*node*" -or $_.ProcessName -li
 ### Full System Reset
 
 ```powershell
-# WARNING: This deletes all data!
+# WARNING: This deletes all campaign and message data.
 
 # 1. Stop all processes
 Get-Process node, electron | Stop-Process -Force
@@ -570,21 +597,18 @@ Get-Process node, electron | Stop-Process -Force
 # 2. Clear databases
 Remove-Item database.sqlite*
 
-# 3. Logs directory is auto-recreated on next start
-# (No pre-existing logs to delete in clean install)
-
-# 4. Reinstall dependencies
+# 3. Reinstall dependencies
 Remove-Item node_modules, package-lock.json -Force -Recurse
 npm install
 
-# 5. Rebuild frontend
+# 4. Rebuild frontend
 cd frontend
 Remove-Item node_modules, package-lock.json, dist -Force -Recurse
 npm install
 npm run build
 cd ..
 
-# 6. Start fresh
+# 5. Start fresh
 npm run start:prod
 ```
 
@@ -596,10 +620,9 @@ If issues persist:
 1. **Check logs:** `backend/logs/error.log`
 2. **Enable debug mode:** `$env:LOG_LEVEL="debug"`
 3. **Run tests:** `npm run test` (look for failing tests)
-4. **Check GitHub Issues:** [github.com/your-repo/whatsflow/issues](https://github.com)
-5. **Contact support:** support@whatsflow.com
+4. **Check GitHub Issues:** [github.com/UdhayaChandraSA/whatsflow/issues](https://github.com/UdhayaChandraSA/whatsflow/issues)
 
 ---
 
-**For configuration help, see [USER_GUIDE.md](./USER_GUIDE.md)**  
+**For configuration help, see [USER_GUIDE.md](./USER_GUIDE.md)**
 **For development issues, see [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)**

@@ -94,8 +94,28 @@ Prevent specific numbers from receiving future messages:
 ## Settings
 
 ### WhatsApp API Tab
-- Configure Meta credentials (encrypted at rest).
-- View tunnel webhook URL (when running with `npm run start:tunnel` or production + tunnel mode).
+
+Configure Meta credentials (encrypted at rest).
+
+This tab also contains the **Webhook Configuration** section, which is always visible and
+lets you manage the LocalTunnel connection without using the terminal:
+
+- **Status card** — shows the current tunnel state: Not Running, Connecting, or Active.
+- **Start Tunnel** button — connects LocalTunnel and displays the public webhook URL.
+  A spinner indicates progress while connecting (typically 3-10 seconds).
+- **Stop Tunnel** button — disconnects the active tunnel.
+- **Refresh** button — re-queries the backend for the latest tunnel status and URL.
+- **Webhook URL** — displayed once the tunnel is Active, with a **Copy** button for
+  one-click clipboard copy.
+- **Quick Setup Guide** — an inline 5-step checklist explaining how to configure the
+  webhook in Meta Developer Console.
+
+To enable delivery status updates (delivered, read):
+1. Click **Start Tunnel** and wait for the Active status.
+2. Copy the displayed webhook URL.
+3. Paste it into Meta Developer Console → Your App → WhatsApp → Configuration → Webhook.
+4. Enter the same Verify Token that is set in Settings.
+5. Click **Verify and Save** and subscribe to the `messages` field.
 
 ### Email Fallback Tab
 - Configure SMTP credentials for automatic email delivery when WhatsApp fails.
@@ -125,10 +145,10 @@ Prevent specific numbers from receiving future messages:
 - Click refresh (re-navigate to New Campaign) to fetch latest template list.
 
 ### Webhook Not Receiving Updates (Statuses Stuck at "Sent")
-- Start the app with `npm run start:tunnel` or using the tunnel-enabled Electron mode.
-- Copy the webhook URL from Settings -> WhatsApp API tab.
-- Paste it in Meta Developer Console -> Your App -> WhatsApp -> Configuration -> Webhook.
-- Subscribe to the `messages` field.
+- Go to **Settings → WhatsApp API → Webhook Configuration** and click **Start Tunnel**.
+- Once the status shows **Active**, copy the webhook URL and paste it into Meta Developer
+  Console → Your App → WhatsApp → Configuration → Webhook.
+- Subscribe to the `messages` field and click **Verify and Save**.
 
 ### Port 3000 Already in Use
 - Another instance of WhatsFlow (or dev server) is running.

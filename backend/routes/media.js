@@ -18,17 +18,6 @@ const fs = require('fs');
 const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
 
-// Magic byte signatures for allowed file types
-const MAGIC_BYTES = {
-    'image/jpeg': [Buffer.from([0xFF, 0xD8, 0xFF])],
-    'image/png': [Buffer.from([0x89, 0x50, 0x4E, 0x47])],
-    'video/mp4': [
-        Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]), // ftyp at offset 0
-        Buffer.from([0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70]), // ftyp variant
-        Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]), // ftyp variant
-    ]
-};
-
 /**
  * @function detectMimeType
  * @description Reads the first 12 bytes of a file and identifies its type by

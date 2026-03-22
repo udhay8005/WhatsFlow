@@ -28,6 +28,8 @@ export default function Settings() {
     const [validationErrors, setValidationErrors] = useState({});
     const [tunnelUrl, setTunnelUrl] = useState(null);
     const [tunnelActive, setTunnelActive] = useState(false);
+    const [tunnelConnecting, setTunnelConnecting] = useState(false);
+    const [tunnelLoading, setTunnelLoading] = useState(false);
 
     const loadStatus = React.useCallback(async () => {
         try {
@@ -37,8 +39,7 @@ export default function Settings() {
             if (config.max_tps) {
                 setFormData(prev => ({ ...prev, max_tps: config.max_tps }));
             }
-        } catch (err) {
-            console.error(err);
+        } catch {
             addToast('Failed to load configuration status', 'error');
         }
     }, [addToast]);
@@ -53,8 +54,40 @@ export default function Settings() {
             const res = await apiService.getTunnelStatus();
             setTunnelUrl(res.data.url);
             setTunnelActive(res.data.active);
+            setTunnelConnecting(res.data.connecting || false);
         } catch {
             // Tunnel status is optional — silently ignore if not available
+        }
+    };
+
+    const handleStartTunnel = async () => {
+        setTunnelLoading(true);
+        try {
+            const res = await apiService.startTunnel();
+            setTunnelUrl(res.data.url);
+            setTunnelActive(true);
+            setTunnelConnecting(false);
+            addToast('Tunnel started! Your webhook URL is ready.', 'success');
+        } catch (err) {
+            const msg = err.response?.data?.error || err.message;
+            addToast('Failed to start tunnel: ' + msg, 'error');
+        } finally {
+            setTunnelLoading(false);
+        }
+    };
+
+    const handleStopTunnel = async () => {
+        setTunnelLoading(true);
+        try {
+            await apiService.stopTunnel();
+            setTunnelUrl(null);
+            setTunnelActive(false);
+            setTunnelConnecting(false);
+            addToast('Tunnel stopped.', 'success');
+        } catch (err) {
+            addToast('Failed to stop tunnel: ' + err.message, 'error');
+        } finally {
+            setTunnelLoading(false);
         }
     };
 
@@ -315,6 +348,33 @@ export default function Settings() {
                                 onToggle={() => toggleShow('smtp_pass')}
                                 configured={status.smtp_pass}
                             />
+
+                            {/* Test SMTP Connection */}
+                            {formData.smtp_host && formData.smtp_user && formData.smtp_pass && (
+                                <div className="pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            try {
+                                                const res = await apiService.testSmtp({
+                                                    smtp_host: formData.smtp_host,
+                                                    smtp_port: formData.smtp_port || '587',
+                                                    smtp_user: formData.smtp_user,
+                                                    smtp_pass: formData.smtp_pass,
+                                                    smtp_secure: formData.smtp_secure
+                                                });
+                                                addToast(res.data.message || 'SMTP connection successful!', 'success');
+                                            } catch (err) {
+                                                const msg = err.response?.data?.error || err.message;
+                                                addToast(msg, 'error');
+                                            }
+                                        }}
+                                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Test SMTP Connection
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
 
@@ -332,41 +392,122 @@ export default function Settings() {
             </div>
 
             {activeTab === 'whatsapp' && (
-                <div className={`mt-6 p-4 border rounded-lg ${tunnelActive
-                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                    : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                        🔗 Webhook Configuration
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+                        Meta needs a public HTTPS URL to send delivery receipts and inbound message events. Start the tunnel to get your URL instantly, or enter your own domain.
+                    </p>
+
+                    {/* Tunnel Status Card */}
+                    <div className={`rounded-lg border p-4 mb-4 ${
+                        tunnelActive
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                            : tunnelConnecting
+                                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                                : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700'
                     }`}>
-                    <p className={`text-sm font-semibold mb-2 ${tunnelActive
-                        ? 'text-green-800 dark:text-green-200'
-                        : 'text-yellow-800 dark:text-yellow-200'
-                        }`}>
-                        {tunnelActive ? '✅ Public Webhook URL' : '⚠️ Webhook Configuration'}
-                    </p>
-                    <p className={`text-xs mb-2 ${tunnelActive
-                        ? 'text-green-700 dark:text-green-300'
-                        : 'text-yellow-700 dark:text-yellow-300'
-                        }`}>
-                        {tunnelActive
-                            ? 'Copy this URL and paste into your Meta App Dashboard:'
-                            : 'Start app with tunnel enabled to get your public webhook URL'}
-                    </p>
-                    {tunnelActive && tunnelUrl ? (
-                        <div className="flex items-center gap-2">
-                            <code className="flex-1 block bg-green-100 dark:bg-green-900/40 px-3 py-2 rounded text-sm font-mono text-green-900 dark:text-green-100">
-                                {tunnelUrl}
-                            </code>
-                            <button
-                                onClick={() => copyToClipboard(tunnelUrl)}
-                                className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium"
-                            >
-                                Copy
-                            </button>
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                            <div className="flex items-center gap-3">
+                                <span className={`text-2xl ${tunnelActive ? '' : tunnelConnecting ? '' : 'opacity-40'}`}>
+                                    {tunnelActive ? '✅' : tunnelConnecting ? '⏳' : '🔌'}
+                                </span>
+                                <div>
+                                    <p className={`font-semibold text-sm ${
+                                        tunnelActive ? 'text-green-800 dark:text-green-200'
+                                            : tunnelConnecting ? 'text-yellow-800 dark:text-yellow-200'
+                                                : 'text-gray-600 dark:text-gray-400'
+                                    }`}>
+                                        {tunnelActive ? 'Tunnel Active — Webhook Ready'
+                                            : tunnelConnecting ? 'Connecting tunnel…'
+                                                : 'Tunnel Not Running'}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                        {tunnelActive
+                                            ? 'LocalTunnel is forwarding Meta webhook events to your local server.'
+                                            : tunnelConnecting
+                                                ? 'Please wait while the tunnel establishes a connection.'
+                                                : 'Click "Start Tunnel" to expose your local server to the internet.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                {!tunnelActive && (
+                                    <button
+                                        type="button"
+                                        onClick={handleStartTunnel}
+                                        disabled={tunnelLoading || tunnelConnecting}
+                                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                    >
+                                        {tunnelLoading ? (
+                                            <><span className="animate-spin">⟳</span> Starting…</>
+                                        ) : '▶ Start Tunnel'}
+                                    </button>
+                                )}
+                                {tunnelActive && (
+                                    <button
+                                        type="button"
+                                        onClick={handleStopTunnel}
+                                        disabled={tunnelLoading}
+                                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                    >
+                                        {tunnelLoading ? (
+                                            <><span className="animate-spin">⟳</span> Stopping…</>
+                                        ) : '⏹ Stop Tunnel'}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={fetchTunnelUrl}
+                                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm transition-colors"
+                                    title="Refresh tunnel status"
+                                >
+                                    ↻ Refresh
+                                </button>
+                            </div>
                         </div>
-                    ) : (
-                        <code className="block bg-yellow-100 dark:bg-yellow-900/40 px-3 py-2 rounded text-sm font-mono text-yellow-900 dark:text-yellow-100">
-                            Tunnel not active - use "npm run start:prod"
-                        </code>
-                    )}
+
+                        {/* Webhook URL */}
+                        {tunnelUrl && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                    Your Webhook URL — Paste this into Meta App Dashboard → Webhooks
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <code className={`flex-1 px-3 py-2 rounded text-sm font-mono break-all ${
+                                        tunnelActive
+                                            ? 'bg-green-100 dark:bg-green-900/40 text-green-900 dark:text-green-100'
+                                            : 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300'
+                                    }`}>
+                                        {tunnelUrl}
+                                    </code>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(tunnelUrl)}
+                                        className="shrink-0 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Use the <strong>Verify Token</strong> field above when Meta asks to verify this URL.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Setup Guide */}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-900 dark:text-blue-200">
+                        <p className="font-semibold mb-2">📋 Quick Setup Guide</p>
+                        <ol className="list-decimal list-inside space-y-1 text-xs text-blue-800 dark:text-blue-300">
+                            <li>Save your <strong>Verify Token</strong> in the form above.</li>
+                            <li>Click <strong>Start Tunnel</strong> — copy the webhook URL shown.</li>
+                            <li>Go to <strong>Meta App Dashboard → WhatsApp → Configuration → Webhooks</strong>.</li>
+                            <li>Paste the URL and enter your Verify Token, then click <strong>Verify &amp; Save</strong>.</li>
+                            <li>Subscribe to the <strong>messages</strong> field under Webhook Fields.</li>
+                        </ol>
+                    </div>
                 </div>
             )}
 

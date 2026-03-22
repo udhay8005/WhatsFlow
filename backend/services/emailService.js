@@ -20,15 +20,22 @@ const logger = require('../utils/logger');
  */
 async function getSmtpCredentials() {
     return new Promise((resolve, reject) => {
-        db.all("SELECT key, value FROM app_config WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure')", [], (err, rows) => {
+        db.all("SELECT key, value FROM app_config WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure', 'smtp_from_email')", [], (err, rows) => {
             if (err) return resolve(null);
 
             const config = {};
-            rows.forEach(row => { config[row.key] = row.value; });
+            rows.forEach(row => {
+                // All values in app_config are encrypted — decrypt each one
+                try {
+                    config[row.key] = cryptoService.decrypt(row.value);
+                } catch (e) {
+                    logger.error(`Failed to decrypt ${row.key}:`, e);
+                    config[row.key] = '';
+                }
+            });
 
             if (!config.smtp_host || !config.smtp_user) return resolve(null);
 
-            // Return config object with encrypted pass, decrypt only at point of use
             resolve(config);
         });
     });
@@ -66,18 +73,26 @@ const emailService = {
             return false;
         }
 
+        // Validate email format to mitigate nodemailer address-parsing DoS
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(toEmail)) {
+            logger.warn('Invalid email address rejected: ' + toEmail);
+            return null;
+        }
+
         const transporter = nodemailer.createTransport({
             host: config.smtp_host,
             port: parseInt(config.smtp_port) || 587,
             secure: config.smtp_secure === 'true',
             auth: {
                 user: config.smtp_user,
-                pass: config.smtp_pass ? cryptoService.decrypt(config.smtp_pass) : '', // Decrypt here
+                pass: config.smtp_pass || '',
             },
         });
 
+        const fromAddress = config.smtp_from_email || config.smtp_user;
         const mailOptions = {
-            from: `"WhatsFlow Bot" <${config.smtp_user}>`,
+            from: `"WhatsFlow Bot" <${fromAddress}>`,
             to: toEmail,
             subject: subject,
             text: textBody, // Plain text for now, could be HTML

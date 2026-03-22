@@ -24,9 +24,9 @@
 ### Required Fields
 
 #### Phone Number ID
-**Location:** Settings → WhatsApp API → Phone Number ID  
-**Type:** String  
-**Example:** `123456789012345`  
+**Location:** Settings → WhatsApp API → Phone Number ID
+**Type:** String
+**Example:** `123456789012345`
 **How to get:**
 1. Go to [Meta Developer Console](https://developers.facebook.com/)
 2. Your App → WhatsApp → API Setup
@@ -37,9 +37,9 @@
 ---
 
 #### WABA ID (WhatsApp Business Account ID)
-**Location:** Settings → WhatsApp API → WABA ID  
-**Type:** String  
-**Example:** `109876543210987`  
+**Location:** Settings → WhatsApp API → WABA ID
+**Type:** String
+**Example:** `109876543210987`
 **How to get:**
 1. Go to [Meta Business Manager](https://business.facebook.com/)
 2. WhatsApp Accounts → View Details
@@ -50,15 +50,15 @@
 ---
 
 #### Access Token
-**Location:** Settings → WhatsApp API → Access Token  
-**Type:** String (encrypted in storage)  
-**Example:** `EAABCxyz...` (starts with EAAB)  
+**Location:** Settings → WhatsApp API → Access Token
+**Type:** String (encrypted in storage)
+**Example:** `EAABCxyz...` (starts with EAAB)
 **How to get:**
 
 **Option 1: Temporary Token (24 hours)**
 1. Meta Developer Console → WhatsApp → API Setup
 2. Copy token from "Temporary access token"
-3. ⚠️ Expires in 24 hours - **NOT recommended for production**
+3. Expires in 24 hours — **NOT recommended for production**
 
 **Option 2: Permanent Token (recommended)**
 1. Go to [Meta Business Settings](https://business.facebook.com/settings/)
@@ -79,9 +79,9 @@
 ---
 
 #### App Secret
-**Location:** Settings → WhatsApp API → App Secret  
-**Type:** String (encrypted in storage)  
-**Example:** `abc123def456...` (32 characters hex)  
+**Location:** Settings → WhatsApp API → App Secret
+**Type:** String (encrypted in storage)
+**Example:** `abc123def456...` (32 characters hex)
 **How to get:**
 1. Meta Developer Console → Settings → Basic
 2. Click "Show" next to App Secret
@@ -89,16 +89,16 @@
 
 **Purpose:** Validates webhook signatures to prevent spoofing
 
-**⚠️ CRITICAL:** Required in production mode. Without this, webhooks will be rejected.
+**CRITICAL:** Required in production mode. Without this, webhooks will be rejected.
 
 **Validation:** 32 characters, hexadecimal
 
 ---
 
 #### Verify Token
-**Location:** Settings → Webhook → Verify Token  
-**Type:** String (encrypted in storage)  
-**Example:** `my_custom_verify_token_123`  
+**Location:** Settings → WhatsApp API → Verify Token
+**Type:** String (encrypted in storage)
+**Example:** `my_custom_verify_token_123`
 **Custom Value:** You choose this yourself
 
 **Purpose:** Meta uses this to verify your webhook endpoint during setup
@@ -139,8 +139,8 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 ### Configuration Fields
 
 #### Enable Email Fallback
-**Location:** Settings → Email Settings → Enable Email Fallback  
-**Type:** Checkbox  
+**Location:** Settings → Email Settings → Enable Email Fallback
+**Type:** Checkbox
 **Default:** Unchecked (disabled)
 
 **When to enable:**
@@ -150,7 +150,7 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 ---
 
 #### SMTP Host
-**Type:** String  
+**Type:** String
 **Examples:**
 - Gmail: `smtp.gmail.com`
 - Outlook: `smtp-mail.outlook.com`
@@ -159,7 +159,7 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 ---
 
 #### SMTP Port
-**Type:** Integer  
+**Type:** Integer
 **Common Values:**
 - `587` - TLS (recommended)
 - `465` - SSL
@@ -170,11 +170,11 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 ---
 
 #### SMTP Username
-**Type:** String  
+**Type:** String
 **Example:** `your-email@gmail.com`
 
 **Gmail Users:**
-⚠️ You cannot use your regular Gmail password directly. You must create an "App Password":
+You cannot use your regular Gmail password directly. You must create an "App Password":
 1. Go to https://myaccount.google.com/security
 2. Enable 2-Step Verification (required)
 3. App Passwords → Select "Mail" → Generate
@@ -183,13 +183,13 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 ---
 
 #### SMTP Password
-**Type:** String (encrypted in storage)  
+**Type:** String (encrypted in storage)
 **Security:** Encrypted with AES-256-CBC before saving
 
 ---
 
 #### From Email
-**Type:** Email address  
+**Type:** Email address
 **Example:** `whatsflow-notifications@yourdomain.com`
 
 **Purpose:** The "From" address recipients see
@@ -198,38 +198,63 @@ curl "https://graph.facebook.com/v18.0/YOUR_WABA_ID/message_templates" `
 
 ### Testing SMTP
 
-**Manual test:**
-```javascript
-// In browser console (Settings page)
-fetch('/api/settings/test-email', { method: 'POST' })
-```
+Use the **Test SMTP** button in **Settings → Email Fallback** tab. This sends a test email
+using the configured credentials and reports success or failure inline.
 
 ---
 
 ## 3. Webhook Configuration
 
+### Webhook Configuration UI
+
+WhatsFlow includes a built-in tunnel manager accessible from **Settings → WhatsApp API →
+Webhook Configuration**. You do not need the command line to set up or use webhooks.
+
+The section contains:
+- **Status card** — displays current tunnel state: Not Running, Connecting, or Active.
+- **Start Tunnel** button — starts LocalTunnel and displays the public webhook URL.
+- **Stop Tunnel** button — stops the active tunnel.
+- **Refresh** button — re-queries the backend for current tunnel status.
+- **Webhook URL** — the full URL to paste into Meta (only shown when Active), with a Copy button.
+- **Quick Setup Guide** — five inline steps for first-time Meta webhook configuration.
+
 ### Webhook URL
 
-**Format:** `http://your-domain.com:3000/webhook`  
-**Examples:**
-- Production: `https://whatsapp.example.com/webhook`
-- ngrok: `https://abc123.ngrok.io/webhook`
-- Localhost (testing): `http://localhost:3000/webhook`
+**Format:** `https://<subdomain>.loca.lt/webhook`
 
-**⚠️ Important:** Meta requires `https://` for production. Use ngrok for localhost testing.
+**Examples:**
+- LocalTunnel: `https://yourname-whatsflow.loca.lt/webhook`
+- ngrok: `https://abc123.ngrok.io/webhook`
+- Production server: `https://whatsapp.example.com/webhook`
+
+Meta requires `https://`. LocalTunnel provides HTTPS automatically.
+
+### TUNNEL_SUBDOMAIN
+
+Set this in `.env` to request the same subdomain on every tunnel start:
+
+```
+TUNNEL_SUBDOMAIN=yourname-whatsflow
+```
+
+The subdomain is **best-effort, not permanently reserved**. LocalTunnel subdomains are
+first-come, first-served. If another user claims the subdomain while your tunnel is closed,
+the URL may change on the next start. A distinctive name minimises this risk.
+
+Without `TUNNEL_SUBDOMAIN`, a random subdomain is assigned on every start.
 
 ---
 
 ### Configuring in Meta
 
-1. Go to [Meta Developer Console](https://developers.facebook.com/)
-2. Your App → WhatsApp → Configuration
-3. Webhook section:
-   - **Callback URL:** `https://your-domain.com/webhook`
-   - **Verify Token:** (same as Settings → Webhook → Verify Token)
-4. Click "Verify and Save"
-5. Subscribe to fields:
-   - ✅ `messages` (required for status updates)
+1. Start the tunnel from Settings → WhatsApp API → Webhook Configuration → Start Tunnel.
+2. Copy the displayed webhook URL.
+3. Go to [Meta Developer Console](https://developers.facebook.com/) → Your App → WhatsApp → Configuration.
+4. Webhook section:
+   - **Callback URL:** paste the webhook URL
+   - **Verify Token:** same value as Settings → WhatsApp API → Verify Token
+5. Click "Verify and Save"
+6. Subscribe to fields: `messages` (required for status updates)
 
 ---
 
@@ -252,16 +277,16 @@ fetch('/api/settings/test-email', { method: 'POST' })
 
 ### Message Processing TPS
 
-**Location:** Settings → Worker → TPS (Transactions Per Second)  
-**Type:** Integer  
-**Range:** 1 - 100  
-**Default:** 5  
+**Location:** Settings → Worker → TPS (Transactions Per Second)
+**Type:** Integer
+**Range:** 1 - 100
+**Default:** 5
 **Recommended:**
 - Testing: 1-5 TPS
 - Light use: 10-20 TPS
 - Heavy use: 50-80 TPS
 
-**⚠️ WhatsApp Limits:**
+**WhatsApp Limits:**
 - Official limit: 80 messages/second
 - Exceeding may result in rate limit errors
 - Start conservative and increase gradually
@@ -269,7 +294,7 @@ fetch('/api/settings/test-email', { method: 'POST' })
 **How it works:**
 ```javascript
 const delayMs = 1000 / tps
-// TPS = 5 → delay = 200ms between sends
+// TPS = 5  → delay = 200ms between sends
 // TPS = 20 → delay = 50ms between sends
 ```
 
@@ -280,9 +305,9 @@ const delayMs = 1000 / tps
 ### Available Variables
 
 #### NODE_ENV
-**Type:** String  
-**Values:** `development`, `production`  
-**Default:** `development`  
+**Type:** String
+**Values:** `development`, `production`
+**Default:** `development`
 **Effect:**
 - **Development:**
   - Detailed error stack traces
@@ -304,8 +329,8 @@ npm run start:prod
 ---
 
 #### PORT
-**Type:** Integer  
-**Default:** 3000  
+**Type:** Integer
+**Default:** 3000
 **Purpose:** HTTP server port
 
 **Change if port conflict:**
@@ -317,9 +342,9 @@ npm run server
 ---
 
 #### LOG_LEVEL
-**Type:** String  
-**Values:** `error`, `warn`, `info`, `debug`  
-**Default:** `info`  
+**Type:** String
+**Values:** `error`, `warn`, `info`, `debug`
+**Default:** `info`
 **Purpose:** Control log verbosity
 
 **Set for debugging:**
@@ -327,6 +352,21 @@ npm run server
 $env:LOG_LEVEL="debug"
 npm run server
 ```
+
+---
+
+#### TUNNEL_SUBDOMAIN
+**Type:** String
+**Example:** `yourname-whatsflow`
+**Purpose:** Request a consistent subdomain from LocalTunnel on every start.
+
+Set this in your `.env` file:
+```
+TUNNEL_SUBDOMAIN=yourname-whatsflow
+```
+
+The resulting webhook URL will be `https://yourname-whatsflow.loca.lt/webhook`. This is
+best-effort — the subdomain is not permanently reserved. See Section 3 for details.
 
 ---
 
@@ -340,8 +380,8 @@ npm run server
 - `webhook_verify_token`
 - `smtp_password`
 
-**Algorithm:** AES-256-CBC  
-**Key Derivation:** PBKDF2 with SHA256  
+**Algorithm:** AES-256-CBC
+**Key Derivation:** PBKDF2 with SHA256
 **Storage:** Database column `app_config.value`
 
 **Implementation:**
@@ -358,15 +398,16 @@ const decrypted = cryptoService.decrypt(row.value)
 
 ### Webhook Signature Validation
 
-**Method:** HMAC-SHA256  
-**Header:** `x-hub-signature-256`  
+**Method:** HMAC-SHA256
+**Header:** `x-hub-signature-256`
 **Format:** `sha256=<hex_signature>`
 
 **Validation:**
 ```javascript
+// req.rawBody is the raw Buffer captured by the express.json() verify callback
 const expectedSignature = 'sha256=' + crypto
     .createHmac('sha256', appSecret)
-    .update(JSON.stringify(req.body))
+    .update(req.rawBody)  // exact bytes Meta signed
     .digest('hex')
 
 // Timing-safe comparison
@@ -375,6 +416,10 @@ crypto.timingSafeEqual(
     Buffer.from(expectedSignature)
 )
 ```
+
+**Important:** The HMAC is computed against the raw request body buffer, not a
+re-serialized JSON string. If `req.rawBody` is unavailable, the request is rejected
+with `400 Bad Request`.
 
 **Security:**
 - Prevents webhook spoofing
@@ -418,7 +463,7 @@ const dbPath = path.join(__dirname, '../custom_path/database.sqlite')
 
 ### WAL Mode (Write-Ahead Logging)
 
-**Status:** Enabled  
+**Status:** Enabled
 **Purpose:** Improve concurrent read/write performance
 
 **Settings:**
@@ -471,8 +516,8 @@ Copy-Item database.sqlite "database_backup_$(Get-Date -Format 'yyyyMMdd').sqlite
 - [ ] Templates loading successfully (green checkmark in Settings)
 - [ ] SMTP configured (optional, but recommended)
 - [ ] Worker TPS set appropriately (start with 5-10)
-- [ ] Webhook URL configured in Meta
-- [ ] Webhook verified successfully
+- [ ] Tunnel started from Settings → WhatsApp API → Webhook Configuration
+- [ ] Webhook URL configured in Meta and verified successfully
 - [ ] Test campaign sent successfully to verify end-to-end flow
 
 ### Security Checklist
@@ -487,5 +532,5 @@ Copy-Item database.sqlite "database_backup_$(Get-Date -Format 'yyyyMMdd').sqlite
 
 ---
 
-**For setup instructions, see [USER_GUIDE.md](./USER_GUIDE.md)**  
+**For setup instructions, see [USER_GUIDE.md](./USER_GUIDE.md)**
 **For deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md)**

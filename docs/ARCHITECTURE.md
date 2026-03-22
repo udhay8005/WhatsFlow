@@ -34,6 +34,7 @@ WhatsFlow is a desktop application for sending bulk WhatsApp messages via the Wh
 - **Media Uploads:** Support for images and videos
 - **Email Fallback:** Automatic email notifications on failures
 - **Webhook Integration:** Receive delivery status updates
+- **Runtime Tunnel Management:** Start/stop LocalTunnel directly from the Settings UI
 - **Offline-First:** Works without constant internet (except for sending)
 
 ### Architecture Type
@@ -102,6 +103,11 @@ WhatsFlow is a desktop application for sending bulk WhatsApp messages via the Wh
         │  - Read Receipts           │
         └────────────────────────────┘
         ┌────────────────────────────┐
+        │  LocalTunnel Relay         │
+        │  - Public HTTPS URL        │
+        │  - Started at runtime      │
+        └────────────────────────────┘
+        ┌────────────────────────────┐
         │  SMTP Server (Optional)    │
         │  - Email Fallback          │
         └────────────────────────────┘
@@ -136,47 +142,50 @@ Development: npm run start:prod
 ### Frontend Layer
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **React** | 19.2.0 | UI framework with dark-mode aware charts via useTheme() |
-| **React Router** | 7.12.0 | Client-side routing (SPA navigation) |
-| **Vite** | 7.2.4 | Build tool and dev server (HMR) |
-| **Tailwind CSS** | 4.1.18 | Utility-first styling framework |
-| **Axios** | 1.13.2 | HTTP client for API requests |
-| **Socket.IO Client** | 4.8.3 | WebSocket client for real-time updates |
-| **Recharts** | 3.6.0 | Charting library for analytics |
-| **XLSX** | 0.18.5 | Excel file parsing for contact import |
-| **Lucide React** | 0.562.0 | Icon library |
+| **React** | 19.x | UI framework with dark-mode aware charts via useTheme() |
+| **React Router** | 7.x | Client-side routing (SPA navigation) |
+| **Vite** | 8.x | Build tool and dev server (HMR) |
+| **Tailwind CSS** | 4.x | Utility-first styling framework |
+| **Axios** | latest | HTTP client for API requests |
+| **Socket.IO Client** | 4.8.x | WebSocket client for real-time updates |
+| **Recharts** | 3.x | Charting library for analytics |
+| **read-excel-file** | latest | Excel file parsing for contact import |
+| **Lucide React** | latest | Icon library |
 
 ### Backend Layer
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **Node.js** | 18+ | JavaScript runtime |
-| **Express.js** | 4.18.0 | Web framework and API server |
-| **Socket.IO** | 4.7.0 | WebSocket server for real-time events |
-| **SQLite3** | 5.1.0 | Embedded relational database |
-| **Helmet** | 8.1.0 | Security headers middleware |
-| **CORS** | 2.8.5 | Cross-origin resource sharing |
-| **Compression** | 1.8.1 | Response compression (gzip) |
-| **Winston** | 3.19.0 | Logging framework |
-| **Nodemailer** | 6.9.0 | Email client for fallback notifications |
-| **Multer** | 2.0.2 | Multipart/form-data file upload handler |
-| **Express Validator** | 7.3.1 | Input validation and sanitization |
-| **Express Rate Limit** | 8.2.1 | API rate limiting middleware |
-| **Node Cron** | 4.2.1 | Scheduled task manager |
+| **Node.js** | 20+ | JavaScript runtime (required) |
+| **Express.js** | 4.x | Web framework and API server |
+| **Socket.IO** | 4.8.x | WebSocket server for real-time events |
+| **SQLite3** | 6.0.1 | Embedded relational database |
+| **Helmet** | 8.x | Security headers middleware |
+| **CORS** | 2.x | Cross-origin resource sharing |
+| **Compression** | 1.x | Response compression (gzip) |
+| **Winston** | 3.x | Logging framework |
+| **Nodemailer** | 6.x | Email client for fallback notifications |
+| **Multer** | 2.x | Multipart/form-data file upload handler |
+| **Express Validator** | 7.x | Input validation and sanitization |
+| **Express Rate Limit** | 8.x | API rate limiting middleware |
+| **Node Cron** | 4.x | Scheduled task manager |
+| **LocalTunnel** | latest | Runtime HTTPS tunnel for webhook testing |
 
 ### Desktop Layer
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **Electron** | 33.0.0 | Desktop application wrapper (Chromium + Node.js) |
-| **Electron Builder** | 26.4.0 | Build and package for distribution |
+| **Electron** | 36.9.5 | Desktop application wrapper (Chromium + Node.js) |
+| **Electron Builder** | 26.x | Build and package for distribution |
 
 ### Testing & Development
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **Jest** | 30.2.0 | Unit and integration testing framework |
-| **Supertest** | 7.2.2 | HTTP endpoint testing |
-| **Playwright** | 1.57.0 | End-to-end UI testing |
-| **Vitest** | 4.0.17 | Frontend unit testing (Vite-native) |
-| **Concurrently** | 9.2.1 | Run multiple npm scripts in parallel |
+| **Jest** | 30.x | Unit and integration testing framework |
+| **Supertest** | 7.x | HTTP endpoint testing |
+| **Playwright** | 1.x | End-to-end UI testing |
+| **Vitest** | 4.x | Frontend unit testing (Vite-native) |
+| **Concurrently** | 9.x | Run multiple npm scripts in parallel |
+
+**Test counts (current):** Backend — 13 suites, 59 tests passing. Frontend — 3 suites, 26 tests passing.
 
 ---
 
@@ -205,8 +214,11 @@ app.use(cors({ origin: false })) // Disable CORS (Electron only)
 // Performance
 app.use(compression())         // Gzip responses
 
-// Body Parsing
-app.use(express.json({ limit: '10mb' }))
+// Body Parsing — rawBody captured for HMAC validation
+app.use(express.json({
+    limit: '10mb',
+    verify: (req, res, buf) => { req.rawBody = buf }
+}))
 app.use(express.urlencoded({ extended: true }))
 
 // Rate Limiting
@@ -236,15 +248,18 @@ app.use('/api/', apiLimiter)
 ##### `/webhook` - Webhook Handler
 - **GET:** Verification endpoint for Meta
 - **POST:** Receive delivery status updates
-- **Security:** HMAC-SHA256 signature validation
+- **Security:** HMAC-SHA256 signature validation against raw request body buffer
 
 ##### `/api/settings` - Configuration
 - **GET `/config`:** Retrieve app configuration
 - **POST `/config`:** Save WhatsApp/SMTP credentials
+- **GET `/tunnel`:** Get current tunnel status and URL
+- **POST `/tunnel/start`:** Start LocalTunnel at runtime (no server restart required)
+- **POST `/tunnel/stop`:** Stop the active LocalTunnel connection
 
 ##### `/api/campaigns` - Campaign Management
 - **GET `/`:** List all campaigns
-- **GET `/templates`:** Fetch WhatsApp templates
+- **GET `/templates`:** Fetch WhatsApp templates (returns `200 + { data: [], status: 'unconfigured' }` when credentials are absent)
 - **POST `/`:** Create new campaign (bulk insert)
 - **PATCH `/:id/status`:** Toggle campaign active/paused
 
@@ -315,7 +330,7 @@ User (Frontend)
     │
     ├─ 1. Upload Excel file
     │     ↓
-    ├─ 2. Parse contacts (xlsx library)
+    ├─ 2. Parse contacts (read-excel-file library)
     │     ↓
     ├─ 3. Select template
     │     ↓
@@ -377,7 +392,7 @@ Meta Servers
           ↓
     Backend (webhook.js)
           │
-          ├─ 1. Validate signature (HMAC-SHA256)
+          ├─ 1. Validate signature (HMAC-SHA256 on req.rawBody)
           │     ↓
           ├─ 2. Extract status update
           │     ↓
@@ -397,10 +412,10 @@ Meta Servers
 ### 6.1 SQL Injection Prevention
 **Method:** Parameterized queries
 ```javascript
-// ❌ UNSAFE
+// UNSAFE — never do this
 db.run(`UPDATE campaigns SET status = '${status}'`)
 
-// ✅ SAFE
+// SAFE — always use parameterized queries
 db.run('UPDATE campaigns SET status = ?', [status])
 ```
 
@@ -408,10 +423,10 @@ db.run('UPDATE campaigns SET status = ?', [status])
 **Method:** HMAC-SHA256 signature validation with timing-safe comparison
 
 ```javascript
-const receivedSignature = req.headers['x-hub-signature-256']
+// rawBody is captured by express.json() verify callback — exact bytes Meta signed
 const expectedSignature = 'sha256=' + crypto
     .createHmac('sha256', appSecret)
-    .update(JSON.stringify(req.body))
+    .update(req.rawBody)  // Buffer — exact bytes Meta signed
     .digest('hex')
 
 // Timing-safe comparison (prevents timing attacks)
@@ -420,6 +435,11 @@ crypto.timingSafeEqual(
     Buffer.from(expectedSignature)
 )
 ```
+
+**Important:** `req.rawBody` must be the raw buffer from the `verify` callback of
+`express.json()`. If it is unavailable, the request is rejected with `400 Bad Request`.
+Using `JSON.stringify(req.body)` is not acceptable because re-serialization can alter
+whitespace and key order, producing a different byte sequence than what Meta signed.
 
 **Production Enforcement:**
 ```javascript
@@ -449,6 +469,11 @@ body('contacts.*.phone').matches(/^\+[1-9]\d{1,14}$/), // E.164 format
 ### 6.6 CORS Policy
 **Production:** Disabled (Electron app, no cross-origin requests)
 **Development:** Allowed from `localhost:5173` (Vite dev server)
+
+### 6.7 Auth Middleware
+**Mechanism:** 256-bit random session key issued at server startup via `GET /auth/token`.
+**Enforcement:** Localhost-only (requests from non-localhost IPs are rejected).
+**Rotation:** Key rotates on every server restart.
 
 ---
 
@@ -520,8 +545,8 @@ CREATE INDEX idx_messages_status_campaign ON messages(status, campaign_id);
 ```json
 {
   "success": true,
-  "data": { ... },
-  "error": "Error message" // Only on failure
+  "data": { },
+  "error": "Error message"
 }
 ```
 
@@ -552,10 +577,10 @@ CREATE INDEX idx_messages_status_campaign ON messages(status, campaign_id);
 async function processQueue() {
     while (isRunning) {
         const messages = await getQueuedMessages(batchSize)
-        
+
         for (const msg of messages) {
             await rateLimit() // Enforce TPS
-            
+
             try {
                 const result = await whatsappService.sendMessage(...)
                 await markSent(msg.id, result.id)
@@ -564,7 +589,7 @@ async function processQueue() {
                 await sendEmailFallback(msg)
             }
         }
-        
+
         await sleep(1000) // Poll every second
     }
 }
@@ -615,13 +640,16 @@ io.emit('campaign_created', { id: 1, name: 'Test' })
 
 ## Conclusion
 
-WhatsFlow is a well-architected desktop application that balances simplicity with production-grade features. The monolithic design is appropriate for a localhost application, while the modular codebase allows for future scaling if needed.
+WhatsFlow is a well-architected desktop application that balances simplicity with
+production-grade features. The monolithic design is appropriate for a localhost application,
+while the modular codebase allows for future scaling if needed.
 
 **Key Strengths:**
-- ✅ Clean separation of concerns (routes, services, workers)
-- ✅ Robust error handling and validation
-- ✅ Security-first design (encryption, signature validation)
-- ✅ Real-time user feedback via Socket.IO
-- ✅ Comprehensive test coverage
+- Clean separation of concerns (routes, services, workers)
+- Robust error handling and validation
+- Security-first design (encryption, raw-body HMAC validation)
+- Runtime tunnel management without server restarts
+- Real-time user feedback via Socket.IO
+- Comprehensive test coverage (59 backend + 26 frontend tests passing)
 
 **For detailed usage instructions, see [USER_GUIDE.md](./USER_GUIDE.md)**

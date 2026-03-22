@@ -56,11 +56,10 @@ const logger = winston.createLogger({
     ],
 });
 
-// If not in production, also log to console
-if (process.env.NODE_ENV !== 'production') {
-    logger.add(new winston.transports.Console({
-        format: consoleFormat,
-    }));
-}
+// Always log to console — in Electron production, users can see stdout;
+// in development, it's the terminal.
+logger.add(new winston.transports.Console({
+    format: consoleFormat,
+}));
 
 module.exports = logger;

@@ -129,7 +129,7 @@ export default function History() {
                     <div key={c.id} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                         {/* Header Row */}
                         <div
-                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => toggleExpand(c.id)}
                         >
                             <div className="flex-1">
@@ -179,7 +179,7 @@ export default function History() {
                                     )}
                                     {/* Delete Button */}
                                     <button
-                                        onClick={(e) => handleDelete(e, c.id, c.campaign_name)}
+                                        onClick={(e) => handleDelete(e, c.id, c.name)}
                                         className="p-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 rounded-full text-red-600 dark:text-red-400 transition-colors"
                                         title="Delete Campaign"
                                     >

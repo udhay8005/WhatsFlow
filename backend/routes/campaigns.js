@@ -37,6 +37,15 @@ router.get('/templates', async (req, res) => {
         const templates = await require('../services/whatsappService').getTemplates();
         res.json({ data: templates });
     } catch (error) {
+        // Credentials not yet configured — return empty list with an informational
+        // status so the frontend can show a "configure credentials" prompt instead
+        // of treating it as a server crash (which floods the console with 500s).
+        const isConfigError = error.message?.includes('missing') ||
+            error.message?.includes('not configured') ||
+            error.message?.includes('not set');
+        if (isConfigError) {
+            return res.json({ data: [], status: 'unconfigured', message: error.message });
+        }
         res.status(500).json({ error: error.message });
     }
 });
@@ -62,8 +71,8 @@ router.get('/:id', (req, res) => {
 // POST /api/campaigns
 // Create a new campaign and enqueue messages
 router.post('/', validateCampaignCreation, (req, res) => {
-    // Body: { name, templateName, contacts, mediaId, mediaType }
-    const { name, templateName, contacts = [], mediaId, mediaType } = req.body;
+    // Body: { name, templateName, templateLanguage, contacts, mediaId, mediaType }
+    const { name, templateName, templateLanguage = 'en_US', contacts = [], mediaId, mediaType } = req.body;
 
 
     // E.164 format: + followed by 1-15 digits
@@ -90,8 +99,8 @@ router.post('/', validateCampaignCreation, (req, res) => {
         // 1. Create Campaign
         const status = req.body.status || 'active';
         db.run(
-            `INSERT INTO campaigns (name, template_name, total_count, status, scheduled_at, media_id, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [name, templateName || '', contacts.length, status, req.body.scheduledAt || null, mediaId || null, mediaType || null],
+            `INSERT INTO campaigns (name, template_name, template_language, total_count, status, scheduled_at, media_id, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [name, templateName || '', templateLanguage, contacts.length, status, req.body.scheduledAt || null, mediaId || null, mediaType || null],
             function (err) {
                 if (err) return handleError(err);
 
@@ -211,7 +220,7 @@ router.delete('/:id', (req, res) => {
 // Update campaign (e.g. Draft -> Active, or editing Draft)
 router.put('/:id', (req, res) => {
     const campaignId = req.params.id;
-    const { name, templateName, contacts, status, scheduledAt, mediaId, mediaType } = req.body;
+    const { name, templateName, templateLanguage = 'en_US', contacts, status, scheduledAt, mediaId, mediaType } = req.body;
 
     // If we are just updating status (Draft -> Active)
     if (status && !contacts) {
@@ -235,8 +244,8 @@ router.put('/:id', (req, res) => {
 
             // 1. Update Campaign
             db.run(
-                `UPDATE campaigns SET name=?, template_name=?, total_count=?, status=?, scheduled_at=?, media_id=?, media_type=? WHERE id=?`,
-                [name, templateName, contacts.length, status || 'active', scheduledAt || null, mediaId || null, mediaType || null, campaignId],
+                `UPDATE campaigns SET name=?, template_name=?, template_language=?, total_count=?, status=?, scheduled_at=?, media_id=?, media_type=? WHERE id=?`,
+                [name, templateName, templateLanguage, contacts.length, status || 'active', scheduledAt || null, mediaId || null, mediaType || null, campaignId],
                 function (err) {
                     if (err) {
                         db.run("ROLLBACK");
@@ -297,6 +306,9 @@ router.put('/:id', (req, res) => {
         });
         return;
     }
+
+    // Neither status-only nor contacts update — nothing to do
+    res.status(400).json({ error: 'No valid update data provided. Include status or contacts.' });
 });
 
 module.exports = router;

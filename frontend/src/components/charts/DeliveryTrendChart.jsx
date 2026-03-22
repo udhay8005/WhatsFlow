@@ -13,6 +13,13 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useTheme } from '../../contexts/ThemeContext';
 
 export default function DeliveryTrendChart({ data }) {
+    // Recharts ResponsiveContainer reads container dimensions synchronously on
+    // first render, before the browser has finished layout.  Delaying render
+    // to the next tick (after useEffect) ensures the DOM is painted and the
+    // ResizeObserver receives real dimensions, eliminating the -1×-1 warning.
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => { setMounted(true); }, []);
+
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -21,6 +28,8 @@ export default function DeliveryTrendChart({ data }) {
     const tooltipBg    = isDark ? '#1F2937' : '#FFFFFF';
     const tooltipBorder = isDark ? '#374151' : '#E5E7EB';
     const tooltipText  = isDark ? '#F9FAFB' : '#111827';
+
+    if (!mounted) return <div className="h-64 w-full" />;
 
     if (!data || data.length === 0) {
         return (
@@ -31,8 +40,8 @@ export default function DeliveryTrendChart({ data }) {
     }
 
     return (
-        <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="h-64 w-full" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
                 <AreaChart
                     data={data}
                     margin={{ top: 10, right: 10, left: 0, bottom: 0 }}

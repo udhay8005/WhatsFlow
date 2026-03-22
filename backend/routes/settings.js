@@ -31,9 +31,9 @@ const settingsLimiter = rateLimit({
 router.get('/config', (req, res) => {
     const keysToCheck = [
         'wa_access_token', 'wa_phone_id', 'wa_waba_id',
-        'webhook_verify_token',
+        'wa_app_secret', 'webhook_verify_token',
         'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure',
-        'max_tps'
+        'smtp_from_email', 'max_tps'
     ];
     const status = {};
 
@@ -142,42 +142,88 @@ router.post('/test-smtp', async (req, res) => {
 });
 
 // GET /api/settings/tunnel
-// Returns current tunnel URL if active
+// Returns current tunnel status + the expected stable webhook URL
 router.get('/tunnel', (req, res) => {
     const url = getTunnelUrl();
     const active = isTunnelActive();
 
+    // Compute the expected URL from the subdomain env var so the UI can
+    // show the stable URL even while the tunnel is still connecting.
+    const subdomain = process.env.TUNNEL_SUBDOMAIN || null;
+    const expectedUrl = subdomain ? `https://${subdomain}.loca.lt/webhook` : null;
+
     res.json({
-        active: active,
-        url: url ? `${url}/webhook` : null,
-        baseUrl: url
+        active,
+        url: url ? `${url}/webhook` : expectedUrl,
+        baseUrl: url,
+        subdomain,
+        connecting: !active && !!subdomain
     });
+});
+
+// POST /api/settings/tunnel/start
+// Starts the LocalTunnel at runtime (no server restart needed)
+router.post('/tunnel/start', async (req, res) => {
+    try {
+        const { startTunnel, isTunnelActive } = require('../tunnelManager');
+        if (isTunnelActive()) {
+            const { getTunnelUrl } = require('../tunnelManager');
+            return res.json({ success: true, url: getTunnelUrl() + '/webhook', message: 'Tunnel already running' });
+        }
+        const PORT = process.env.PORT || 3000;
+        const subdomain = process.env.TUNNEL_SUBDOMAIN || undefined;
+        const url = await startTunnel(PORT, subdomain);
+        logger.info('Tunnel started via API: ' + url);
+        res.json({ success: true, url: url + '/webhook', message: 'Tunnel started successfully' });
+    } catch (error) {
+        logger.error('Failed to start tunnel via API:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to start tunnel: ' + error.message });
+    }
+});
+
+// POST /api/settings/tunnel/stop
+// Stops the active LocalTunnel
+router.post('/tunnel/stop', async (req, res) => {
+    try {
+        const { stopTunnel } = require('../tunnelManager');
+        await stopTunnel();
+        logger.info('Tunnel stopped via API');
+        res.json({ success: true, message: 'Tunnel stopped' });
+    } catch (error) {
+        logger.error('Failed to stop tunnel via API:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to stop tunnel: ' + error.message });
+    }
 });
 
 // POST /api/settings/clear-history
 // Deletes all campaigns and messages
 router.post('/clear-history', (req, res) => {
+    // Guard helper: only send a response if headers haven't been sent yet,
+    // preventing "Cannot set headers after they are sent" crashes if an
+    // async db callback fires after a synchronous catch already responded.
+    const safeSend = (fn) => { if (!res.headersSent) fn(); };
+
     try {
         db.serialize(() => {
             db.run('DELETE FROM messages', (err) => {
                 if (err) {
-                    return res.status(500).json({ error: 'Failed to clear messages: ' + err.message });
+                    return safeSend(() => res.status(500).json({ error: 'Failed to clear messages: ' + err.message }));
                 }
 
                 db.run('DELETE FROM campaigns', (err) => {
                     if (err) {
-                        return res.status(500).json({ error: 'Failed to clear campaigns: ' + err.message });
+                        return safeSend(() => res.status(500).json({ error: 'Failed to clear campaigns: ' + err.message }));
                     }
 
-                    res.json({
+                    safeSend(() => res.json({
                         success: true,
                         message: 'All campaign and message history cleared successfully'
-                    });
+                    }));
                 });
             });
         });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to clear history: ' + error.message });
+        return safeSend(() => res.status(500).json({ error: 'Failed to clear history: ' + error.message }));
     }
 });
 
@@ -219,6 +265,8 @@ router.post('/clear-logs', (req, res) => {
 // POST /api/settings/clean-app
 // Comprehensive cleanup: logs, temp files, optimize database
 router.post('/clean-app', (req, res) => {
+    const safeSend = (fn) => { if (!res.headersSent) fn(); };
+
     try {
         const fs = require('fs');
         const path = require('path');
@@ -236,14 +284,13 @@ router.post('/clean-app', (req, res) => {
             actions.push('Cleared log files');
         }
 
-        // 2. Remove temp upload files
+        // 2. Remove temp upload files older than 24 hours
         const uploadsDir = path.join(__dirname, '../../uploads');
         if (fs.existsSync(uploadsDir)) {
             const files = fs.readdirSync(uploadsDir);
             files.forEach(file => {
                 const filePath = path.join(uploadsDir, file);
                 const stats = fs.statSync(filePath);
-                // Delete files older than 24 hours
                 const hoursSinceModified = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
                 if (hoursSinceModified > 24) {
                     fs.unlinkSync(filePath);
@@ -252,7 +299,7 @@ router.post('/clean-app', (req, res) => {
             actions.push('Cleaned old uploaded files');
         }
 
-        // 3. Optimize database (VACUUM)
+        // 3. Optimize database (VACUUM) — async; respond from callback only
         db.run('VACUUM', (err) => {
             if (err) {
                 logger.error('Failed to optimize database:', err);
@@ -260,14 +307,15 @@ router.post('/clean-app', (req, res) => {
                 actions.push('Optimized database');
             }
 
-            res.json({
+            safeSend(() => res.json({
                 success: true,
                 message: `App cleaned: ${actions.join(', ')}`
-            });
+            }));
         });
 
     } catch (error) {
-        res.status(500).json({ error: 'Failed to clean app: ' + error.message });
+        // Synchronous fs error (e.g. permission denied) — db.run not yet queued
+        return safeSend(() => res.status(500).json({ error: 'Failed to clean app: ' + error.message }));
     }
 });
 

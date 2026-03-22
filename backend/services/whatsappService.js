@@ -2,7 +2,7 @@
  * @file whatsappService.js
  * @description Meta WhatsApp Business API integration service.
  *              Handles template message sending, media upload, and
- *              approved template retrieval via Graph API v19.0.
+ *              approved template retrieval via Graph API v21.0.
  * @module backend/services/whatsappService
  * @author Udhaya Chandra SA
  * @version 1.0.1
@@ -15,7 +15,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const logger = require('../utils/logger');
 
-const GRAPH_VERSION = process.env.WA_API_VERSION || 'v19.0';
+const GRAPH_VERSION = process.env.WA_API_VERSION || 'v21.0';
 const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 /**
@@ -113,7 +113,7 @@ const whatsappService = {
 
         const payload = {
             messaging_product: "whatsapp",
-            to: to, // Must be E.164
+            to: to, // E.164 format with + prefix — Meta v21.0 accepts "+16505551234"
             type: "template",
             template: {
                 name: templateName,
@@ -150,13 +150,28 @@ const whatsappService = {
         if (!targetId) throw new Error("WABA ID missing");
 
         const url = `${BASE_URL}/${targetId}/message_templates`;
+        const headers = { 'Authorization': `Bearer ${creds.wa_access_token}` };
 
         try {
-            const response = await axios.get(url, {
-                params: { limit: 100 },
-                headers: { 'Authorization': `Bearer ${creds.wa_access_token}` }
-            });
-            return response.data.data;
+            let all = [];
+            let nextUrl = url;
+            let params = { limit: 100, status: 'APPROVED' };
+
+            // Follow pagination cursors so all templates are returned
+            while (nextUrl) {
+                const response = await axios.get(nextUrl, { params, headers });
+                const page = response.data.data || [];
+                all = all.concat(page);
+                // After first request, use cursor — not query params
+                params = undefined;
+                nextUrl = response.data.paging?.cursors?.after
+                    ? `${url}?after=${response.data.paging.cursors.after}&limit=100&status=APPROVED`
+                    : null;
+                // Safety: stop after 10 pages (1000 templates)
+                if (all.length >= 1000) break;
+            }
+
+            return all.filter(t => t.status === 'APPROVED');
         } catch (error) {
             logger.error('WhatsApp get templates failed:', error.response?.data || error.message);
             throw error;

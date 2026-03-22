@@ -18,9 +18,18 @@ router.post('/blacklist', (req, res) => {
     const { phone, reason } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
 
+    const raw = phone.trim();
+    if (!/^\+?\d{7,15}$/.test(raw)) {
+        return res.status(400).json({ error: 'Invalid phone number. Use 7-15 digits, optionally starting with +' });
+    }
+
+    // Always normalize to +prefix so the blacklist JOIN in the worker matches
+    // campaign phone numbers (which are stored with + in E.164 format)
+    const normalized = raw.startsWith('+') ? raw : '+' + raw;
+
     db.run(
         'INSERT OR REPLACE INTO blacklist (phone_number, reason, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
-        [phone, reason],
+        [normalized, reason],
         (err) => {
             if (err) {
                 logger.error('Blacklist add error:', err);
@@ -44,7 +53,8 @@ router.get('/blacklist', (req, res) => {
 
 // DELETE /api/contacts/blacklist/:phone - Remove from blacklist
 router.delete('/blacklist/:phone', (req, res) => {
-    const { phone } = req.params;
+    // Express auto-decodes URI params, so %2B919... becomes +919...
+    const phone = decodeURIComponent(req.params.phone);
     db.run('DELETE FROM blacklist WHERE phone_number = ?', [phone], (err) => {
         if (err) {
             logger.error('Blacklist delete error:', err);

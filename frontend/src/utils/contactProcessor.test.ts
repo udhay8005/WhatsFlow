@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { filterContacts, processContactList } from './contactProcessor';
+
+// contactProcessor → excelParser → read-excel-file/browser.
+// Stub the sub-path so the real browser bundle is never loaded in the
+// jsdom/node Vitest environment (which does not satisfy the "browser"
+// export condition required by the bare package).
+vi.mock('read-excel-file/browser', () => ({
+    default: vi.fn()
+}));
 
 // Mock Data
 const HEADERS = ['Name', 'Phone', 'Amount', 'Date'];

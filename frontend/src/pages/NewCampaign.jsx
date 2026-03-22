@@ -175,10 +175,9 @@ export default function NewCampaign() {
         setLoadingTemplates(true);
         try {
             const res = await apiService.getTemplates();
-            // Critical Fix: check if res.data is actually an array
-            const validTemplates = Array.isArray(res.data)
-                ? res.data.filter(t => t?.status === 'APPROVED')
-                : [];
+            // Backend returns { data: [...] }, Axios wraps in .data → res.data = { data: [...] }
+            const rawTemplates = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+            const validTemplates = rawTemplates.filter(t => t?.status === 'APPROVED');
             setTemplates(validTemplates);
             if (validTemplates.length > 0) setTemplateId(validTemplates[0].name);
             else addToast('No approved templates found. Please create templates in your WhatsApp Business account.', 'error');
@@ -339,9 +338,14 @@ export default function NewCampaign() {
 
         setLoading(true);
         try {
+            // Capture the template's language code from the selected template object
+            const selectedTemplate = templates.find(t => t.name === templateId);
+            const templateLanguage = selectedTemplate?.language || 'en_US';
+
             const payload = {
                 name: campaignName,
                 templateName: templateId,
+                templateLanguage,
                 contacts: processedContacts,
                 mediaId: mediaId,
                 mediaType: mediaType,

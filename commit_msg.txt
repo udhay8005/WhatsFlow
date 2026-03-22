@@ -1,0 +1,9 @@
+feat: add Webhook Configuration UI and runtime tunnel API
+
+- Add Webhook Configuration UI in Settings for local tunnel control
+- Add runtime tunnel API endpoints for start/stop actions
+- Fix Webhook rawBody validation replacing unreliable JSON fallback
+- Remove single-use key guard blocking Vite HMR in auth middleware
+- Fix 403 retry infinite loop in api client and 500 error on templates route
+- Update charts mount guard to prevent Recharts rendering warnings
+- Clean up test database and artifacts

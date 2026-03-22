@@ -37,7 +37,8 @@ const io = socketIo(server, {
         methods: ['GET', 'POST']
     },
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    maxHttpBufferSize: 1e6  // 1 MB — mitigates memory-DoS from oversized binary payloads (CVE GHSA-677m-j7p3-52f9)
 });
 
 const helmet = require('helmet');
@@ -67,8 +68,15 @@ if (process.env.NODE_ENV !== 'production') {
         credentials: true
     }));
 }
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// JSON parsing for all routes EXCEPT /webhook (which needs raw body for HMAC)
+app.use((req, res, next) => {
+    if (req.path.startsWith('/webhook')) return next(); // Skip — webhook handles its own parsing
+    express.json({ limit: '10mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+    if (req.path.startsWith('/webhook')) return next();
+    express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+});
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

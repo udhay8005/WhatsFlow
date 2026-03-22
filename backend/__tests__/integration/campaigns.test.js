@@ -1,8 +1,7 @@
 const request = require('supertest');
 const { app, server } = require('../../server');
 const db = require('../../database');
-const fs = require('fs');
-const path = require('path');
+const { getApiKey } = require('../../middleware/auth');
 
 // Mock external services to prevent real calls during API tests
 jest.mock('../../services/whatsappService');
@@ -13,9 +12,13 @@ jest.mock('../../worker', () => ({
 }));
 
 describe('Campaigns API', () => {
+    let apiKey;
 
     // Clean up DB before running
     beforeAll(done => {
+        // Get the session API key generated at startup
+        apiKey = getApiKey();
+
         // Wait for connection/schema init
         setTimeout(() => {
             db.run("DELETE FROM campaigns", [], (err) => {
@@ -44,6 +47,7 @@ describe('Campaigns API', () => {
 
         const res = await request(app)
             .post('/api/campaigns')
+            .set('X-API-Key', apiKey)
             .send(payload);
 
         if (res.status !== 201) {
@@ -58,6 +62,7 @@ describe('Campaigns API', () => {
     it('should validate missing fields', async () => {
         const res = await request(app)
             .post('/api/campaigns')
+            .set('X-API-Key', apiKey)
             .send({ name: "Invalid" }); // Missing contacts/template
 
         expect(res.status).toBe(400);

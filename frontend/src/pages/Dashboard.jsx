@@ -47,8 +47,8 @@ export default function Dashboard() {
                 sent: totalSent,
                 failed: totalFailed
             });
-        } catch (err) {
-            console.error(err);
+        } catch {
+            // Stats load failure is non-critical — UI shows zeros
         }
     };
 
@@ -90,8 +90,8 @@ export default function Dashboard() {
             if (action === 'pause') await apiService.pauseCampaign(id);
             else await apiService.resumeCampaign(id);
             loadData(); // Refresh list
-        } catch (err) {
-            console.error("Failed to toggle status", err);
+        } catch {
+            // Status toggle failure is reflected by UI not updating
         }
     };
 
@@ -153,7 +153,7 @@ export default function Dashboard() {
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {recent.length === 0 ? (
                                 <tr>
-                                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                                         No campaigns yet. Start your first one!
                                     </td>
                                 </tr>

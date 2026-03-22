@@ -3,7 +3,9 @@
  * @description Background queue processor for outbound WhatsApp messages.
  *              Polls the database for queued messages, respects campaign rate limits,
  *              enforces blacklist exclusion via SQL JOIN, attempts WhatsApp delivery
- *              with automatic email fallback on eligible error codes, and uses
+ *              with automatic email fallback on eligible error codes, applies
+ *              60-second backoff on rate-limit errors (130429 / 131056), skips
+ *              retries for permanent failures (131026, 132001, etc.), and uses
  *              exponential backoff on DB errors to prevent runaway polling.
  * @module backend/worker
  * @author Udhaya Chandra SA
@@ -18,7 +20,23 @@ const logger = require('./utils/logger');
 // Config
 const POLL_INTERVAL = 2000; // 2 seconds
 const RATE_LIMIT_TPS = 1; // Very conservative default
-const WHATSAPP_ERROR_CODES_FOR_FALLBACK = [131026, 131047, 131051, 131031]; // Not on WhatsApp, Invalid number, etc
+
+// Error codes that are permanent failures — no point retrying
+// 131026: Recipient phone number not on WhatsApp
+// 131047: Message failed to send because more than 24 hours have passed since the customer last replied
+// 131051: Unsupported message type
+// 131031: Business account locked/restricted
+// 132001: Template language or locale code invalid
+// 132007: Template does not exist
+const WHATSAPP_ERROR_CODES_NO_RETRY = [131026, 131047, 131051, 131031, 132001, 132007];
+
+// Error codes that are eligible for email fallback (recipient unreachable on WhatsApp)
+const WHATSAPP_ERROR_CODES_FOR_FALLBACK = [131026, 131051, 131031];
+
+// Error codes that indicate a rate limit — slow down sending
+// 130429: Rate limit hit; 131056: Pair rate limit hit
+const WHATSAPP_ERROR_CODES_RATE_LIMIT = [130429, 131056];
+const RATE_LIMIT_BACKOFF_MS = 60000; // 60s pause when rate limited
 
 let isRunning = false;
 let errorCount = 0;
@@ -89,7 +107,7 @@ function processQueue(io) {
 
         // 2. Fetch next queued or retry-eligible message (excluding blacklisted contacts)
         const sql = `
-            SELECT m.*, c.template_name, c.name as campaign_name, c.media_id, c.media_type, ct.email, ct.email_opt_in
+            SELECT m.*, c.template_name, c.template_language, c.name as campaign_name, c.media_id, c.media_type, ct.email, ct.email_opt_in
             FROM messages m
             JOIN campaigns c ON m.campaign_id = c.id
             LEFT JOIN contacts ct ON m.contact_id = ct.id
@@ -158,10 +176,12 @@ function processQueue(io) {
 
 /**
  * @function proceedToSend
- * @description Sends a single message via WhatsApp. On eligible failure codes
- *              (not on WhatsApp, invalid number, etc.) attempts an email fallback
- *              if the contact has an email and has opted in. Updates message status
- *              and campaign counters in the database after each outcome.
+ * @description Sends a single message via WhatsApp. On permanent failure codes
+ *              (131026: not on WA, 132001: bad template language, etc.) marks failed
+ *              immediately without retry. On eligible codes (131026, 131051, 131031)
+ *              attempts email fallback if contact has opted in. On rate-limit codes
+ *              (130429, 131056) re-queues and pauses the entire worker 60s.
+ *              Updates message status and campaign counters after each outcome.
  * @param {object} msg - Message row joined with campaign, contact, and blacklist data.
  * @param {number} currentTps - Current rate limit (transactions per second).
  * @param {import('socket.io').Server} io - Socket.IO server instance.
@@ -190,14 +210,14 @@ async function proceedToSend(msg, currentTps, io) {
         const waRes = await whatsappService.sendMessage(
             msg.phone_number,
             msg.template_name,
-            'en_US',
+            msg.template_language || 'en_US',
             components,
             msg.media_id,
             msg.media_type
         );
 
         // Success
-        const waId = waRes.messages[0].id;
+        const waId = waRes.messages?.[0]?.id || `unknown_${Date.now()}`;
         db.run(
             "UPDATE messages SET status='sent', wa_message_id=?, sent_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             [waId, msg.id],
@@ -216,12 +236,20 @@ async function proceedToSend(msg, currentTps, io) {
 
         const errorCode = waErr.response?.data?.error?.code;
         const errorMessage = waErr.response?.data?.error?.message || waErr.message;
+
+        const isRateLimit = errorCode && WHATSAPP_ERROR_CODES_RATE_LIMIT.includes(errorCode);
+        const isNoRetry = errorCode && WHATSAPP_ERROR_CODES_NO_RETRY.includes(errorCode);
         const isFallbackEligible = errorCode && WHATSAPP_ERROR_CODES_FOR_FALLBACK.includes(errorCode);
+
+        // Rate limit — log prominently and pause the worker for 60s
+        if (isRateLimit) {
+            logger.warn(`Rate limit hit (code ${errorCode}) for campaign ${msg.campaign_id} — pausing 60s`);
+        }
 
         let finalStatus = 'failed';
         let finalChannel = 'whatsapp';
 
-        // B. Attempt Email Fallback
+        // B. Attempt Email Fallback (only for unreachable-on-WhatsApp codes)
         if (isFallbackEligible && msg.email && msg.email_opt_in) {
             logger.info(`Attempting Email Fallback for ${msg.email}`);
             try {
@@ -242,18 +270,21 @@ async function proceedToSend(msg, currentTps, io) {
             }
         }
 
-        const shouldRetry = msg.retry_count < msg.max_retries && !isFallbackEligible;
+        // Retry only if: retries remain AND it's not a permanent error AND not rate-limited
+        // Rate-limited messages go back to queued so they retry after the backoff delay
+        const isPermanentFailure = isNoRetry || (msg.retry_count + 1 >= msg.max_retries);
+        const shouldRetry = !isPermanentFailure || isRateLimit;
         const newStatus = shouldRetry ? 'queued' : finalStatus;
         const newRetryCount = msg.retry_count + 1;
 
         db.run(
-            `UPDATE messages SET 
-                        status=?, 
-                        error_reason=?, 
-                        final_channel=?, 
+            `UPDATE messages SET
+                        status=?,
+                        error_reason=?,
+                        final_channel=?,
                         fallback_attempted=?,
                         retry_count=?,
-                        updated_at=CURRENT_TIMESTAMP 
+                        updated_at=CURRENT_TIMESTAMP
                     WHERE id=?`,
             [newStatus, errorMessage, finalChannel, isFallbackEligible ? 1 : 0, newRetryCount, msg.id],
             (err) => {
@@ -266,6 +297,12 @@ async function proceedToSend(msg, currentTps, io) {
                 }
             }
         );
+
+        // If rate-limited, pause queue for 60s before next poll
+        if (isRateLimit) {
+            setTimeout(() => processQueue(io), RATE_LIMIT_BACKOFF_MS);
+            return;
+        }
     }
 
     // Dynamic Rate Limit Delay
@@ -288,10 +325,35 @@ function updateCampaignStats(campaignId, type, io) {
         `UPDATE campaigns SET success_count = success_count + ?, failed_count = failed_count + ? WHERE id = ?`,
         [isSuccess ? 1 : 0, !isSuccess ? 1 : 0, campaignId],
         (err) => {
-            if (err) logger.error(`Failed to update campaign ${type} count:`, err);
-            else if (io) {
+            if (err) {
+                logger.error(`Failed to update campaign ${type} count:`, err);
+                return;
+            }
+            if (io) {
                 io.emit('campaign_progress', { id: campaignId, type });
             }
+
+            // Auto-complete: if all messages are processed, mark campaign as completed
+            db.get(
+                `SELECT total_count, success_count, failed_count FROM campaigns WHERE id = ?`,
+                [campaignId],
+                (err2, campaign) => {
+                    if (err2 || !campaign) return;
+                    const processed = (campaign.success_count || 0) + (campaign.failed_count || 0);
+                    if (processed >= campaign.total_count && campaign.total_count > 0) {
+                        db.run(
+                            `UPDATE campaigns SET status = 'completed' WHERE id = ? AND status = 'active'`,
+                            [campaignId],
+                            (err3) => {
+                                if (!err3) {
+                                    logger.info(`Campaign ${campaignId} completed (${campaign.success_count} sent, ${campaign.failed_count} failed)`);
+                                    if (io) io.emit('campaign_completed', { id: campaignId });
+                                }
+                            }
+                        );
+                    }
+                }
+            );
         }
     );
 }

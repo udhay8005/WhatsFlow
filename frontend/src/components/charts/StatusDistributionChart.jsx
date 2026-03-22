@@ -22,6 +22,9 @@ const COLORS = {
 };
 
 export default function StatusDistributionChart({ data }) {
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => { setMounted(true); }, []);
+
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -29,6 +32,8 @@ export default function StatusDistributionChart({ data }) {
     const tooltipBorder = isDark ? '#374151' : '#E5E7EB';
     const tooltipText   = isDark ? '#F9FAFB' : '#111827';
     const legendColor   = isDark ? '#9CA3AF' : '#6B7280';
+
+    if (!mounted) return <div className="h-64 w-full" />;
 
     if (!data || data.length === 0) {
         return (
@@ -45,8 +50,8 @@ export default function StatusDistributionChart({ data }) {
     }));
 
     return (
-        <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="h-64 w-full" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
                 <PieChart>
                     <Pie
                         data={chartData}

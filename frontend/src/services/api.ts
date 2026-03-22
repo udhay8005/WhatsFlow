@@ -91,8 +91,13 @@ api.interceptors.response.use(
             console.error('[API] Network error:', error.message);
             error.message = 'Cannot connect to server. Please ensure the backend is running.';
         } else if (error.response.status === 403) {
-            console.error('[API] Auth error — retrying key fetch');
-            apiKeyPromise = null; // Force re-fetch
+            // Only force a key re-fetch for API routes — never for /auth/token
+            // itself, which would create an infinite retry loop.
+            const url = (error.config as any)?.url || '';
+            if (!url.includes('/auth/token')) {
+                console.error('[API] Auth error — retrying key fetch');
+                apiKeyPromise = null; // Force re-fetch on next request
+            }
         } else if (error.response.status >= 500) {
             console.error('[API] Server error:', error.response.data);
             error.message = 'Server error. Please try again later.';
@@ -123,7 +128,7 @@ export const apiService = {
     checkEligibility: (contacts: any[]) => api.post('/api/contacts/check-eligibility', { contacts }),
     getBlacklist: () => api.get('/api/contacts/blacklist'),
     addToBlacklist: (phone: string, reason: string) => api.post('/api/contacts/blacklist', { phone, reason }),
-    removeFromBlacklist: (phone: string) => api.delete(`/api/contacts/blacklist/${phone}`),
+    removeFromBlacklist: (phone: string) => api.delete(`/api/contacts/blacklist/${encodeURIComponent(phone)}`),
 
     // Media
     uploadMedia: (formData: FormData) => api.post<{ mediaId: string, mediaType: string }>('/api/media/upload', formData, {
@@ -135,8 +140,14 @@ export const apiService = {
     getStatsTrend: () => api.get('/api/stats/trend'),
     getStatsDistribution: () => api.get('/api/stats/status-distribution'),
 
+    // SMTP Test
+    testSmtp: (data: { smtp_host: string; smtp_port: string; smtp_user: string; smtp_pass: string; smtp_secure: string }) =>
+        api.post('/api/settings/test-smtp', data),
+
     // Maintenance
     getTunnelStatus: () => api.get('/api/settings/tunnel'),
+    startTunnel: () => api.post('/api/settings/tunnel/start'),
+    stopTunnel: () => api.post('/api/settings/tunnel/stop'),
     clearLogs: () => api.post('/api/settings/clear-logs'),
     cleanApp: () => api.post('/api/settings/clean-app'),
     clearHistory: () => api.post('/api/settings/clear-history')

@@ -71,6 +71,7 @@ function initializeSchema() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             template_name TEXT NOT NULL,
+            template_language TEXT DEFAULT 'en_US',
             status TEXT DEFAULT 'draft',
             total_count INTEGER DEFAULT 0,
             success_count INTEGER DEFAULT 0,
@@ -81,24 +82,19 @@ function initializeSchema() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`, (err) => {
             if (!err) {
-                // Auto-migration for existing databases
-                db.run("ALTER TABLE campaigns ADD COLUMN scheduled_at DATETIME", (err) => {
-                    // Ignore error if column already exists
-                    if (err && !err.message.includes("duplicate column")) {
-                        logger.error('Migration error (scheduled_at):', err.message);
-                    }
-                });
-
-                db.run("ALTER TABLE campaigns ADD COLUMN media_id TEXT", (err) => {
-                    if (err && !err.message.includes("duplicate column")) {
-                        logger.error('Migration error (media_id):', err.message);
-                    }
-                });
-
-                db.run("ALTER TABLE campaigns ADD COLUMN media_type TEXT", (err) => {
-                    if (err && !err.message.includes("duplicate column")) {
-                        logger.error('Migration error (media_type):', err.message);
-                    }
+                // Auto-migrations for existing databases
+                const migrations = [
+                    "ALTER TABLE campaigns ADD COLUMN scheduled_at DATETIME",
+                    "ALTER TABLE campaigns ADD COLUMN media_id TEXT",
+                    "ALTER TABLE campaigns ADD COLUMN media_type TEXT",
+                    "ALTER TABLE campaigns ADD COLUMN template_language TEXT DEFAULT 'en_US'"
+                ];
+                migrations.forEach(sql => {
+                    db.run(sql, (err) => {
+                        if (err && !err.message.includes("duplicate column")) {
+                            logger.error('Migration error:', err.message);
+                        }
+                    });
                 });
             }
         });

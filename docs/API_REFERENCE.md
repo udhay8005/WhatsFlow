@@ -21,7 +21,9 @@ Response:
 { "apiKey": "session-key-here" }
 ```
 
-The frontend `api.ts` axios client handles this automatically — it fetches the key on startup and attaches it to every request via an interceptor.
+The frontend `api.ts` axios client handles this automatically — it fetches the key on startup
+and attaches it to every request via an interceptor. The key is a 256-bit random value that
+rotates on every server restart. Access is restricted to localhost only.
 
 ---
 
@@ -30,14 +32,15 @@ The frontend `api.ts` axios client handles this automatically — it fetches the
 ### System Status
 **GET** `/health`
 
-Returns server and database health. Used by Electron to detect when the backend is ready, and by the sidebar "Status" indicator in the UI.
+Returns server and database health. Used by Electron to detect when the backend is ready,
+and by the `BackendStatus` sidebar indicator in the UI (via `apiService.checkHealth()`).
 
 **Response:**
 ```json
 {
   "status": "healthy",
   "database": "connected",
-  "timestamp": "2026-03-21T11:25:12.000Z"
+  "timestamp": "2026-03-22T11:25:12.000Z"
 }
 ```
 
@@ -62,7 +65,7 @@ Returns all campaigns with summary stats.
     "success_count": 98,
     "failed_count": 2,
     "scheduled_at": null,
-    "created_at": "2026-03-21T10:00:00.000Z"
+    "created_at": "2026-03-22T10:00:00.000Z"
   }
 ]
 ```
@@ -70,7 +73,7 @@ Returns all campaigns with summary stats.
 ### Get Campaign Details
 **GET** `/api/campaigns/:id`
 
-Returns campaign metadata + all individual message records.
+Returns campaign metadata and all individual message records.
 
 ### Create Campaign
 **POST** `/api/campaigns`
@@ -117,7 +120,14 @@ Deletes campaign and all associated messages (CASCADE).
 
 Fetches all approved WhatsApp templates from the WABA via Meta API.
 
-**Response:**
+When credentials are not yet configured, returns `200` with an empty data array rather than
+an error:
+
+```json
+{ "data": [], "status": "unconfigured" }
+```
+
+When credentials are valid:
 ```json
 {
   "data": [
@@ -166,12 +176,63 @@ Saves WhatsApp API and SMTP credentials (encrypted before storage).
 ### Get Tunnel Status
 **GET** `/api/settings/tunnel`
 
+Returns the current state of the LocalTunnel connection.
+
 **Response:**
 ```json
 {
   "active": true,
-  "url": "https://whatsflow-yourname.loca.lt"
+  "url": "https://whatsflow.loca.lt/webhook",
+  "baseUrl": "https://whatsflow.loca.lt",
+  "subdomain": "whatsflow",
+  "connecting": false
 }
+```
+
+When the tunnel is not running:
+```json
+{
+  "active": false,
+  "url": null,
+  "baseUrl": null,
+  "subdomain": null,
+  "connecting": false
+}
+```
+
+### Start Tunnel
+**POST** `/api/settings/tunnel/start`
+
+Starts LocalTunnel at runtime. No server restart is required. The tunnel uses the
+`TUNNEL_SUBDOMAIN` environment variable if set; otherwise a random subdomain is assigned.
+
+**Response:**
+```json
+{
+  "success": true,
+  "url": "https://yourname-whatsflow.loca.lt/webhook",
+  "message": "Tunnel started successfully"
+}
+```
+
+**Error (tunnel already running):**
+```json
+{ "success": false, "message": "Tunnel is already running" }
+```
+
+### Stop Tunnel
+**POST** `/api/settings/tunnel/stop`
+
+Stops the active LocalTunnel connection.
+
+**Response:**
+```json
+{ "success": true, "message": "Tunnel stopped" }
+```
+
+**Error (no active tunnel):**
+```json
+{ "success": false, "message": "No active tunnel to stop" }
 ```
 
 ### Clear Logs
@@ -258,7 +319,17 @@ Meta calls this to verify your webhook endpoint. Returns the challenge token on 
 ### Receive Webhook Events
 **POST** `/webhook`
 
-Receives delivery status updates (sent, delivered, read, failed) from Meta. Validates HMAC-SHA256 signature using App Secret. Updates message status in database and emits `campaign_progress` via Socket.IO.
+Receives delivery status updates (sent, delivered, read, failed) from Meta.
+
+**Security:** Validates HMAC-SHA256 signature using the App Secret. The signature is
+computed against `req.rawBody` — the exact raw bytes of the request body as captured by
+the `express.json()` verify callback. This ensures byte-for-byte fidelity with what Meta
+signed.
+
+Returns `400 Bad Request` if `req.rawBody` is unavailable.
+Returns `403 Forbidden` if the signature does not match.
+
+On success: updates message status in database and emits `campaign_progress` via Socket.IO.
 
 ---
 
@@ -267,6 +338,7 @@ Receives delivery status updates (sent, delivered, read, failed) from Meta. Vali
 | Event | Direction | Payload | Purpose |
 |-------|-----------|---------|---------|
 | `campaign_progress` | Server -> Client | `{ id, type: 'success'\|'failed' }` | Real-time campaign progress |
+| `status_update` | Server -> Client | `{ id, status }` | Delivery status update from webhook |
 
 ---
 

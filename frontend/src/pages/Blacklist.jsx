@@ -38,9 +38,17 @@ export default function Blacklist() {
 
     const handleAdd = async (e) => {
         e.preventDefault();
+
+        // Validate: only digits, optionally prefixed with +
+        const cleaned = newPhone.trim();
+        if (!/^\+?\d{7,15}$/.test(cleaned)) {
+            addToast('Invalid phone number. Use digits only (7-15 digits), optionally starting with +', 'error');
+            return;
+        }
+
         setBlocking(true);
         try {
-            await apiService.addToBlacklist(newPhone, reason);
+            await apiService.addToBlacklist(cleaned, reason);
             setNewPhone('');
             setReason('');
             addToast('Number blocked successfully', 'success');
@@ -77,11 +85,13 @@ export default function Blacklist() {
                 <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Block a Number</h2>
                 <form onSubmit={handleAdd} className="flex gap-4">
                     <input
-                        type="text"
-                        placeholder="Phone Number (e.g. 919876543210)"
+                        type="tel"
+                        placeholder="Phone Number (e.g. +919876543210)"
                         className="flex-1 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 outline-none"
                         value={newPhone}
-                        onChange={e => setNewPhone(e.target.value)}
+                        onChange={e => setNewPhone(e.target.value.replace(/[^+\d]/g, ''))}
+                        pattern="^\+?\d{7,15}$"
+                        title="Enter 7-15 digits, optionally starting with +"
                         required
                     />
                     <input

@@ -13,6 +13,7 @@ import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { MessageSquare, Settings as SettingsIcon, LayoutDashboard, History, Send, Sun, Moon, ShieldAlert } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { apiService } from '../services/api';
 import logo from '../assets/logo.png';
 
 export default function Layout() {
@@ -38,7 +39,7 @@ export default function Layout() {
                 </div>
 
                 <nav className="flex-1 px-4 space-y-2 mt-4">
-                    <NavItem to="/" icon={<LayoutDashboard />} label="Dashboard" />
+                    <NavItem to="/" icon={<LayoutDashboard />} label="Dashboard" end />
                     <NavItem to="/campaigns/new" icon={<MessageSquare />} label="New Campaign" />
                     <NavItem to="/history" icon={<History />} label="History" />
                     <NavItem to="/blacklist" icon={<ShieldAlert />} label="Blacklist" />
@@ -61,10 +62,11 @@ export default function Layout() {
     );
 }
 
-function NavItem({ to, icon, label }) {
+function NavItem({ to, icon, label, end = false }) {
     return (
         <NavLink
             to={to}
+            end={end}
             className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
                     ? 'bg-green-600 text-white'
@@ -84,8 +86,10 @@ function BackendStatus() {
     React.useEffect(() => {
         const checkStatus = async () => {
             try {
-                const res = await fetch('/health');
-                setIsOnline(res.ok);
+                // Use apiService (baseURL = http://localhost:3000) so we actually
+                // probe the Express backend — not the Vite dev server at :5173.
+                const res = await apiService.checkHealth();
+                setIsOnline(res.status === 200);
             } catch {
                 setIsOnline(false);
             }

@@ -13,6 +13,46 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.1] — 2026-03-22
+
+### Added
+- **Webhook Configuration UI** — Settings → WhatsApp API tab now has an always-visible
+  "Webhook Configuration" section containing: tunnel status card (Not Running / Connecting /
+  Active), Start Tunnel / Stop Tunnel buttons with loading state, Refresh button, webhook URL
+  display with one-click Copy button, and a 5-step Quick Setup Guide.
+- **Runtime Tunnel API** — Two new endpoints `POST /api/settings/tunnel/start` and
+  `POST /api/settings/tunnel/stop` allow starting and stopping LocalTunnel at runtime
+  without restarting the app or using the command line.
+- **`startTunnel` / `stopTunnel` API client methods** — Added to `frontend/src/services/api.ts`
+  to support the Webhook Configuration UI.
+
+### Fixed
+- **Webhook rawBody validation** — Removed unreliable `JSON.stringify(req.body)` fallback;
+  HMAC-SHA256 is now computed against the raw request buffer (`req.rawBody`) captured by the
+  `express.json()` verify callback. Returns `400` if `rawBody` is unavailable.
+- **`settings.js` safeSend guard** — Added double-response guard in async DB callbacks to
+  prevent `Cannot set headers after they are sent` errors.
+- **Auth.js single-use key guard removed** — The one-use key check was blocking Vite HMR
+  (hot module reload) in development. Auth now enforces: localhost-only + 256-bit key +
+  rotation on server restart.
+- **Templates route 500 → 200** — `GET /api/campaigns/templates` now returns
+  `200 + { data: [], status: 'unconfigured' }` when credentials are not yet configured,
+  instead of a 500 error.
+- **API client 403 retry loop** — Fixed infinite retry loop in `api.ts`; `apiKeyPromise` is
+  now only reset for non-auth / non-token URLs, preventing indefinite retry cycles.
+- **`BackendStatus` health check** — `BackendStatus` component now uses
+  `apiService.checkHealth()` (which targets port 3000) instead of `fetch('/health')`, which
+  resolved a silent failure when Vite dev server intercepted the request.
+- **Charts mount guard** — Added container dimension guard to both `DeliveryTrendChart` and
+  `StatusDistributionChart` to prevent the Recharts `-1 x -1` container size warning on
+  initial mount.
+
+### Chore
+- **File cleanup** — Removed `dist/win-unpacked/` (325 MB), `coverage/`, stale build
+  artifacts, rotated log files, and `database.test.sqlite` from the working tree.
+
+---
+
 ## [1.0.1] — 2026-03-21
 
 ### Added

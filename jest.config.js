@@ -12,6 +12,7 @@ module.exports = {
     ],
     verbose: true,
     testTimeout: 10000,
-    testPathIgnorePatterns: ['/node_modules/', '/tests/'],
+    testPathIgnorePatterns: ['/node_modules/', '/tests/', '/dist/', '/frontend/'],
+    modulePathIgnorePatterns: ['<rootDir>/dist/'],
     setupFilesAfterEnv: ['<rootDir>/backend/__tests__/setup.js'],
 };

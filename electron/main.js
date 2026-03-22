@@ -12,14 +12,40 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
+const crypto = require('crypto');
 
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
-// In production, run the backend server inside the main process
+/**
+ * Returns (or generates + saves) a stable per-installation tunnel subdomain.
+ * Stored as a 6-char hex string in userData/tunnel-id.txt so it survives app updates.
+ * Results in a URL like: https://wf-a1b2c3.loca.lt/webhook
+ */
+function getStableSubdomain() {
+    const idFile = path.join(app.getPath('userData'), 'tunnel-id.txt');
+    if (fs.existsSync(idFile)) {
+        return fs.readFileSync(idFile, 'utf8').trim();
+    }
+    const subdomain = 'wf-' + crypto.randomBytes(3).toString('hex');
+    fs.writeFileSync(idFile, subdomain, 'utf8');
+    return subdomain;
+}
+
+// In production, configure and start the backend server in this process
 if (!isDev) {
     try {
-        process.env.NODE_ENV = 'production'; // Ensure server starts and serves static files
-        console.log('Starting internal backend server...');
+        process.env.NODE_ENV = 'production';
+
+        // Auto-enable tunnel with a stable, per-installation subdomain
+        if (!process.env.ENABLE_TUNNEL) {
+            process.env.ENABLE_TUNNEL = 'true';
+        }
+        if (!process.env.TUNNEL_SUBDOMAIN) {
+            // app.getPath('userData') is available before app.whenReady() on Electron 36+
+            process.env.TUNNEL_SUBDOMAIN = getStableSubdomain();
+        }
+
         require('../backend/server');
     } catch (e) {
         console.error('Failed to start backend:', e);
@@ -71,7 +97,7 @@ function createWindow() {
         width: 1280,
         height: 800,
         title: 'WhatsFlow',
-        icon: path.join(__dirname, '../frontend/dist/logo.png'),
+        icon: path.join(__dirname, '../frontend/public/icon.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -96,9 +122,7 @@ app.whenReady().then(async () => {
     if (!isDev) {
         try {
             const port = process.env.PORT || 3000;
-            console.log('Waiting for backend server to be ready...');
             await waitForBackend(port);
-            console.log('Backend is ready.');
         } catch (err) {
             console.error('Backend startup failed:', err.message);
         }

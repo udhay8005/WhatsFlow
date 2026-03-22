@@ -14,8 +14,14 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 
-// Enforce size limit for webhook payloads
-router.use(express.json({ limit: '100kb' }));
+// Enforce size limit for webhook payloads.
+// The verify callback captures the raw request bytes so we can
+// validate the X-Hub-Signature-256 header using the exact bytes
+// that Meta signed — NOT a re-serialised JSON string.
+router.use(express.json({
+    limit: '100kb',
+    verify: (req, _res, buf) => { req.rawBody = buf; }
+}));
 const db = require('../database');
 const cryptoService = require('../services/cryptoService');
 const logger = require('../utils/logger');
@@ -84,9 +90,20 @@ router.post('/', async (req, res) => {
     const appSecret = await getAppSecret();
 
     if (appSecret) {
+        // req.rawBody is populated by the verify callback in the local express.json()
+        // registered at the top of this router.  If it is absent it means another
+        // middleware has already consumed the stream — we CANNOT reconstruct the
+        // exact bytes Meta signed (JSON.stringify may change whitespace/key order),
+        // so we reject rather than risk an HMAC false-positive or false-negative.
+        if (!req.rawBody) {
+            logger.error('Webhook raw body unavailable — body parser conflict. Rejecting request.');
+            return res.sendStatus(400);
+        }
+        const rawBody = req.rawBody;
+
         const expectedSignature = 'sha256=' + crypto
             .createHmac('sha256', appSecret)
-            .update(JSON.stringify(req.body))
+            .update(rawBody)
             .digest('hex');
 
         const source = Buffer.from(signature || '');
@@ -119,21 +136,25 @@ router.post('/', async (req, res) => {
                     changes.forEach(change => {
                         if (change.value && change.value.statuses) {
                             change.value.statuses.forEach(status => {
-                                // Status Update: sent, delivered, read, failed
                                 const wamid = status.id;
                                 const newStatus = status.status;
-                                const timestamp = status.timestamp;
+                                // Parse Meta error reason if present (failed status)
+                                const errorReason = status.errors?.[0]
+                                    ? `[${status.errors[0].code}] ${status.errors[0].title}`
+                                    : null;
 
-                                logger.info(`Message status update: ${newStatus}`);
+                                logger.info(`Message status update: ${newStatus}${errorReason ? ' — ' + errorReason : ''}`);
 
-                                // Update DB
-                                db.run(`UPDATE messages SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE wa_message_id = ?`,
-                                    [newStatus, wamid], (err) => {
-                                        if (!err) {
-                                            // Emit to UI
-                                            io.emit('status_update', { id: wamid, status: newStatus });
-                                        }
-                                    });
+                                const sql = errorReason
+                                    ? `UPDATE messages SET status = ?, error_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE wa_message_id = ?`
+                                    : `UPDATE messages SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE wa_message_id = ?`;
+                                const params = errorReason ? [newStatus, errorReason, wamid] : [newStatus, wamid];
+
+                                db.run(sql, params, (err) => {
+                                    if (!err) {
+                                        io.emit('status_update', { id: wamid, status: newStatus });
+                                    }
+                                });
                             });
                         }
                     });
@@ -142,7 +163,9 @@ router.post('/', async (req, res) => {
         }
         res.sendStatus(200);
     } else {
-        res.sendStatus(404);
+        // Always return 200 — Meta retries on any non-200 response
+        logger.info(`Unrecognised webhook object type: ${body.object}`);
+        res.sendStatus(200);
     }
 });
 
