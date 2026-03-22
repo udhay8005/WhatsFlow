@@ -20,15 +20,19 @@ that Meta can send webhook delivery-status events to your machine.
 
 ## Method 1: Start via Settings UI (Recommended)
 
-This is the simplest approach. No terminal commands are required.
+This is the simplest approach. No terminal commands or `.env` file required.
 
 1. Open WhatsFlow and navigate to **Settings** (gear icon in the sidebar).
 2. Click the **WhatsApp API** tab.
 3. Scroll down to the **Webhook Configuration** section — it is always visible.
-4. The status card shows the current tunnel state: **Not Running**, **Connecting**, or **Active**.
+4. In the **Tunnel Subdomain** field, type a unique name (e.g. `yourname-whatsflow`).
+   - This sets a consistent URL so you only need to configure Meta once.
+   - Leave it blank if you don't mind a different URL each time.
+   - Only lowercase letters, numbers, and hyphens are accepted.
 5. Click **Start Tunnel**.
    - The button shows a loading spinner while the tunnel connects (usually 3-10 seconds).
    - Once connected, the status card turns green (**Active**) and the full webhook URL appears.
+   - The subdomain is saved to the database automatically — it will be pre-filled next time.
 6. Click the **Copy** button next to the URL to copy it to your clipboard.
 7. Paste the URL into Meta as described in the "Configure Meta Webhook" section below.
 
@@ -82,14 +86,21 @@ the tunnel is active and the Verify Token matches.
 
 ## About URL Stability
 
-### Using TUNNEL_SUBDOMAIN (recommended)
+### Using the Subdomain input (recommended)
 
-If you set `TUNNEL_SUBDOMAIN` in your `.env` file, the tunnel will always request the same
-subdomain:
+Type your preferred subdomain directly in the **Tunnel Subdomain** field inside
+**Settings → WhatsApp API → Webhook Configuration**. The value is saved to the database
+automatically and pre-filled the next time you open the Settings page — no `.env` file or
+server restart needed.
+
+If you prefer the environment variable approach (e.g. for automated deployments), you can
+still set `TUNNEL_SUBDOMAIN` in `.env`:
 
 ```
 TUNNEL_SUBDOMAIN=yourname-whatsflow
 ```
+
+The subdomain priority is: **UI input → database → `TUNNEL_SUBDOMAIN` env var → random**.
 
 This means the URL `https://yourname-whatsflow.loca.lt/webhook` will be the same every time
 you start the tunnel, so you only need to configure Meta once.
@@ -128,11 +139,9 @@ Examples:
 **Error:** Tunnel starts but the status card shows an error, or the terminal shows
 `Subdomain is already in use`.
 
-**Solution:** Choose a different subdomain name in `.env`:
-```
-TUNNEL_SUBDOMAIN=yourname-whatsflow-2
-```
-Then click **Stop Tunnel** and **Start Tunnel** again (or restart with `npm run start:tunnel`).
+**Solution:** Type a different name in the **Tunnel Subdomain** field in
+Settings → WhatsApp API → Webhook Configuration (e.g. `yourname-whatsflow-2`),
+then click **Start Tunnel** again. The new subdomain is saved automatically.
 
 ---
 
@@ -184,9 +193,11 @@ A: No. You can start and stop the tunnel directly from Settings → WhatsApp API
 Configuration. The command-line option remains available as an alternative.
 
 **Q: Does the URL change every time I restart the tunnel?**
-A: It depends. If `TUNNEL_SUBDOMAIN` is set in `.env`, the same subdomain is requested on
-every start, so the URL is consistent. Without it, a random subdomain is assigned each time.
-Either way, the subdomain is not permanently reserved — see "About URL Stability" above.
+A: It depends on whether you have a subdomain set. If you typed a name in the
+**Tunnel Subdomain** field (or set `TUNNEL_SUBDOMAIN` in `.env`), the same subdomain is
+requested on every start and the URL stays consistent. Without any subdomain, a random one
+is assigned each time. Either way, subdomains are not permanently reserved — see
+"About URL Stability" above.
 
 **Q: What if someone else claims my subdomain while my tunnel is off?**
 A: You will receive a different URL on the next start. Update the Callback URL in Meta and

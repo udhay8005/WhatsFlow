@@ -203,21 +203,29 @@ When the tunnel is not running:
 ### Start Tunnel
 **POST** `/api/settings/tunnel/start`
 
-Starts LocalTunnel at runtime. No server restart is required. The tunnel uses the
-`TUNNEL_SUBDOMAIN` environment variable if set; otherwise a random subdomain is assigned.
+Starts LocalTunnel at runtime. No server restart is required.
+
+**Optional request body:**
+```json
+{ "subdomain": "yourname-whatsflow" }
+```
+
+Subdomain resolution priority: **request body → database → `TUNNEL_SUBDOMAIN` env var → random**.
+The resolved subdomain is saved to the database automatically for future starts.
 
 **Response:**
 ```json
 {
   "success": true,
   "url": "https://yourname-whatsflow.loca.lt/webhook",
+  "subdomain": "yourname-whatsflow",
   "message": "Tunnel started successfully"
 }
 ```
 
-**Error (tunnel already running):**
+**If already running:**
 ```json
-{ "success": false, "message": "Tunnel is already running" }
+{ "success": true, "url": "https://yourname-whatsflow.loca.lt/webhook", "message": "Tunnel already running" }
 ```
 
 ### Stop Tunnel

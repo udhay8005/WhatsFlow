@@ -20,13 +20,21 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Webhook Configuration" section containing: tunnel status card (Not Running / Connecting /
   Active), Start Tunnel / Stop Tunnel buttons with loading state, Refresh button, webhook URL
   display with one-click Copy button, and a 5-step Quick Setup Guide.
+- **Tunnel Subdomain input field** — A **Tunnel Subdomain** text input in the Webhook
+  Configuration section lets users set a consistent subdomain directly in the UI — no `.env`
+  file or server restart needed. The chosen subdomain is saved to the database automatically
+  and pre-filled on the next visit.
 - **Runtime Tunnel API** — Two new endpoints `POST /api/settings/tunnel/start` and
   `POST /api/settings/tunnel/stop` allow starting and stopping LocalTunnel at runtime
-  without restarting the app or using the command line.
-- **`startTunnel` / `stopTunnel` API client methods** — Added to `frontend/src/services/api.ts`
-  to support the Webhook Configuration UI.
+  without restarting the app or using the command line. `tunnel/start` accepts an optional
+  `{ subdomain }` body parameter; priority is request body → database → env var → random.
+- **`startTunnel(subdomain?)` / `stopTunnel` API client methods** — Added to
+  `frontend/src/services/api.ts` to support the Webhook Configuration UI.
 
 ### Fixed
+- **Windows app name** — Added `"uninstallDisplayName": "WhatsFlow"` to the `nsis` config
+  in `package.json`; the Windows Apps list now shows **WhatsFlow** instead of
+  **WhatsFlow 1.0.1**.
 - **Webhook rawBody validation** — Removed unreliable `JSON.stringify(req.body)` fallback;
   HMAC-SHA256 is now computed against the raw request buffer (`req.rawBody`) captured by the
   `express.json()` verify callback. Returns `400` if `rawBody` is unavailable.

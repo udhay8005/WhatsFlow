@@ -65,7 +65,8 @@ This command:
     "nsis": {
       "oneClick": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "uninstallDisplayName": "WhatsFlow"
     }
   }
 }

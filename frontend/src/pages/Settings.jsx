@@ -30,6 +30,7 @@ export default function Settings() {
     const [tunnelActive, setTunnelActive] = useState(false);
     const [tunnelConnecting, setTunnelConnecting] = useState(false);
     const [tunnelLoading, setTunnelLoading] = useState(false);
+    const [tunnelSubdomain, setTunnelSubdomain] = useState('');
 
     const loadStatus = React.useCallback(async () => {
         try {
@@ -55,6 +56,10 @@ export default function Settings() {
             setTunnelUrl(res.data.url);
             setTunnelActive(res.data.active);
             setTunnelConnecting(res.data.connecting || false);
+            // Pre-fill subdomain input with the saved value from the database
+            if (res.data.savedSubdomain) {
+                setTunnelSubdomain(res.data.savedSubdomain);
+            }
         } catch {
             // Tunnel status is optional — silently ignore if not available
         }
@@ -63,10 +68,11 @@ export default function Settings() {
     const handleStartTunnel = async () => {
         setTunnelLoading(true);
         try {
-            const res = await apiService.startTunnel();
+            const res = await apiService.startTunnel(tunnelSubdomain.trim() || undefined);
             setTunnelUrl(res.data.url);
             setTunnelActive(true);
             setTunnelConnecting(false);
+            if (res.data.subdomain) setTunnelSubdomain(res.data.subdomain);
             addToast('Tunnel started! Your webhook URL is ready.', 'success');
         } catch (err) {
             const msg = err.response?.data?.error || err.message;
@@ -399,6 +405,29 @@ export default function Settings() {
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
                         Meta needs a public HTTPS URL to send delivery receipts and inbound message events. Start the tunnel to get your URL instantly, or enter your own domain.
                     </p>
+
+                    {/* Subdomain Input */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Tunnel Subdomain
+                            <span className="ml-1 font-normal text-gray-400">(leave blank for a random URL each time)</span>
+                        </label>
+                        <div className="flex items-center gap-1">
+                            <span className="text-sm text-gray-400 dark:text-gray-500 shrink-0">https://</span>
+                            <input
+                                type="text"
+                                value={tunnelSubdomain}
+                                onChange={e => setTunnelSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                placeholder="yourname-whatsflow"
+                                disabled={tunnelActive}
+                                className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                            <span className="text-sm text-gray-400 dark:text-gray-500 shrink-0">.loca.lt/webhook</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                            Set a unique name to always get the same URL. Saved automatically when you start the tunnel.
+                        </p>
+                    </div>
 
                     {/* Tunnel Status Card */}
                     <div className={`rounded-lg border p-4 mb-4 ${

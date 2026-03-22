@@ -142,27 +142,30 @@ router.post('/test-smtp', async (req, res) => {
 });
 
 // GET /api/settings/tunnel
-// Returns current tunnel status + the expected stable webhook URL
+// Returns current tunnel status + saved subdomain from db (or env fallback)
 router.get('/tunnel', (req, res) => {
     const url = getTunnelUrl();
     const active = isTunnelActive();
 
-    // Compute the expected URL from the subdomain env var so the UI can
-    // show the stable URL even while the tunnel is still connecting.
-    const subdomain = process.env.TUNNEL_SUBDOMAIN || null;
-    const expectedUrl = subdomain ? `https://${subdomain}.loca.lt/webhook` : null;
+    // Read saved subdomain from database, fall back to env var
+    db.get('SELECT value FROM app_config WHERE key = ?', ['tunnel_subdomain'], (err, row) => {
+        const savedSubdomain = row?.value || process.env.TUNNEL_SUBDOMAIN || null;
+        const expectedUrl = savedSubdomain ? `https://${savedSubdomain}.loca.lt/webhook` : null;
 
-    res.json({
-        active,
-        url: url ? `${url}/webhook` : expectedUrl,
-        baseUrl: url,
-        subdomain,
-        connecting: !active && !!subdomain
+        res.json({
+            active,
+            url: url ? `${url}/webhook` : (active ? null : expectedUrl),
+            baseUrl: url || null,
+            subdomain: savedSubdomain,
+            savedSubdomain,
+            connecting: !active && !!savedSubdomain
+        });
     });
 });
 
 // POST /api/settings/tunnel/start
-// Starts the LocalTunnel at runtime (no server restart needed)
+// Starts the LocalTunnel at runtime (no server restart needed).
+// Subdomain priority: request body → database → env var → random
 router.post('/tunnel/start', async (req, res) => {
     try {
         const { startTunnel, isTunnelActive } = require('../tunnelManager');
@@ -171,10 +174,26 @@ router.post('/tunnel/start', async (req, res) => {
             return res.json({ success: true, url: getTunnelUrl() + '/webhook', message: 'Tunnel already running' });
         }
         const PORT = process.env.PORT || 3000;
-        const subdomain = process.env.TUNNEL_SUBDOMAIN || undefined;
+        const reqSubdomain = (req.body?.subdomain || '').trim() || null;
+
+        // Resolve final subdomain: body → db → env
+        const resolveSubdomain = () => new Promise((resolve) => {
+            if (reqSubdomain) return resolve(reqSubdomain);
+            db.get('SELECT value FROM app_config WHERE key = ?', ['tunnel_subdomain'], (err, row) => {
+                resolve(row?.value || process.env.TUNNEL_SUBDOMAIN || undefined);
+            });
+        });
+
+        const subdomain = await resolveSubdomain();
+
+        // Persist chosen subdomain so the UI shows it on next load
+        if (subdomain) {
+            db.run('INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)', ['tunnel_subdomain', subdomain]);
+        }
+
         const url = await startTunnel(PORT, subdomain);
-        logger.info('Tunnel started via API: ' + url);
-        res.json({ success: true, url: url + '/webhook', message: 'Tunnel started successfully' });
+        logger.info('Tunnel started via API: ' + url + ' (subdomain: ' + (subdomain || 'random') + ')');
+        res.json({ success: true, url: url + '/webhook', subdomain: subdomain || null, message: 'Tunnel started successfully' });
     } catch (error) {
         logger.error('Failed to start tunnel via API:', error.message);
         res.status(500).json({ success: false, error: 'Failed to start tunnel: ' + error.message });

@@ -87,6 +87,7 @@ backups/
 *.tmp
 *.bak
 *.swp
+*.txt
 
 # ─── Security / Certificates ─────────────────────────────────
 *.pem

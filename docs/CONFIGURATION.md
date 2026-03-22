@@ -211,6 +211,9 @@ WhatsFlow includes a built-in tunnel manager accessible from **Settings → What
 Webhook Configuration**. You do not need the command line to set up or use webhooks.
 
 The section contains:
+- **Tunnel Subdomain** input — type a unique name (e.g. `yourname-whatsflow`) to get a
+  consistent URL every time. Saved to the database automatically; pre-filled on return visits.
+  Only lowercase letters, numbers, and hyphens are accepted. Leave blank for a random URL.
 - **Status card** — displays current tunnel state: Not Running, Connecting, or Active.
 - **Start Tunnel** button — starts LocalTunnel and displays the public webhook URL.
 - **Stop Tunnel** button — stops the active tunnel.
@@ -355,15 +358,21 @@ npm run server
 
 ---
 
-#### TUNNEL_SUBDOMAIN
+##### TUNNEL_SUBDOMAIN
 **Type:** String
 **Example:** `yourname-whatsflow`
 **Purpose:** Request a consistent subdomain from LocalTunnel on every start.
 
-Set this in your `.env` file:
+**Preferred method:** Type the subdomain directly in the **Tunnel Subdomain** field inside
+Settings → WhatsApp API → Webhook Configuration. It is saved to the database automatically —
+no `.env` file or server restart needed.
+
+**Alternative (env var):** Set in your `.env` file:
 ```
 TUNNEL_SUBDOMAIN=yourname-whatsflow
 ```
+
+Subdomain resolution priority: **UI input → database → `TUNNEL_SUBDOMAIN` env var → random**.
 
 The resulting webhook URL will be `https://yourname-whatsflow.loca.lt/webhook`. This is
 best-effort — the subdomain is not permanently reserved. See Section 3 for details.

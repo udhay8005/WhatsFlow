@@ -100,6 +100,9 @@ Configure Meta credentials (encrypted at rest).
 This tab also contains the **Webhook Configuration** section, which is always visible and
 lets you manage the LocalTunnel connection without using the terminal:
 
+- **Tunnel Subdomain** — type a unique name (e.g. `yourname-whatsflow`) to always get the
+  same webhook URL. Leave blank for a random URL each time. Saved to the database
+  automatically — pre-filled on the next visit.
 - **Status card** — shows the current tunnel state: Not Running, Connecting, or Active.
 - **Start Tunnel** button — connects LocalTunnel and displays the public webhook URL.
   A spinner indicates progress while connecting (typically 3-10 seconds).
@@ -111,11 +114,12 @@ lets you manage the LocalTunnel connection without using the terminal:
   webhook in Meta Developer Console.
 
 To enable delivery status updates (delivered, read):
-1. Click **Start Tunnel** and wait for the Active status.
-2. Copy the displayed webhook URL.
-3. Paste it into Meta Developer Console → Your App → WhatsApp → Configuration → Webhook.
-4. Enter the same Verify Token that is set in Settings.
-5. Click **Verify and Save** and subscribe to the `messages` field.
+1. Enter your preferred name in the **Tunnel Subdomain** field.
+2. Click **Start Tunnel** and wait for the Active status.
+3. Copy the displayed webhook URL.
+4. Paste it into Meta Developer Console → Your App → WhatsApp → Configuration → Webhook.
+5. Enter the same Verify Token that is set in Settings.
+6. Click **Verify and Save** and subscribe to the `messages` field.
 
 ### Email Fallback Tab
 - Configure SMTP credentials for automatic email delivery when WhatsApp fails.

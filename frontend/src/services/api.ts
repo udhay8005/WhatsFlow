@@ -146,7 +146,7 @@ export const apiService = {
 
     // Maintenance
     getTunnelStatus: () => api.get('/api/settings/tunnel'),
-    startTunnel: () => api.post('/api/settings/tunnel/start'),
+    startTunnel: (subdomain?: string) => api.post('/api/settings/tunnel/start', subdomain ? { subdomain } : {}),
     stopTunnel: () => api.post('/api/settings/tunnel/stop'),
     clearLogs: () => api.post('/api/settings/clear-logs'),
     cleanApp: () => api.post('/api/settings/clean-app'),
