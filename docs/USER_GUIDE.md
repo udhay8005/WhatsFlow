@@ -45,9 +45,24 @@ Before sending messages, configure your WhatsApp API credentials:
 
 ### Step 2: Upload Contacts
 - Click **Upload Excel/CSV**.
-- File must have at least a `Phone` column (E.164 format recommended: `+911234567890`).
-- Supported columns: `Phone`, `Email`, and dynamic parameter columns mapped to `{{1}}`, `{{2}}`, etc.
+- File must have at least a `phone` column.
 - Invalid phone numbers are flagged and skipped automatically.
+
+**Standard Excel column format** (one file covers all templates):
+
+| Column | Format | Maps To |
+|--------|--------|---------|
+| `phone` | Country code + number, no `+` or spaces — e.g. `919876543210` | Recipient |
+| `email` | `donor@email.com` | Fallback / records |
+| `name` | Full donor name | `{{1}}` in all templates |
+| `amount` | Numeric only — e.g. `5000` (no Rs./INR/commas) | `{{2}}` in Single templates |
+| `date` | `DD-MMM-YY` — e.g. `15-Oct-25` | `{{3}}` in Single templates |
+
+**Single templates** — one row per donor.
+**Multiple templates** — repeat the same phone number on multiple rows (one row per donation); the app groups them automatically into a single message with a donation table.
+
+> A ready-to-use `DV_Contacts.xlsx` template (with sample data and an Instructions sheet) is
+> available in the project root directory.
 
 ### Step 3: Review & Schedule
 - Review valid/invalid contact count.
@@ -81,13 +96,43 @@ The History page lists all campaigns with:
 
 ---
 
+## Template Variables
+
+WhatsFlow uses Meta's numbered variable format (`{{1}}`, `{{2}}`, `{{3}}`). To keep one
+Excel sheet working for all templates, use a consistent variable order:
+
+| Variable | Always Means | Excel Column |
+|----------|-------------|--------------|
+| `{{1}}` | Donor name | `name` |
+| `{{2}}` | Donation amount (Single) or auto-built donation table (Multiple) | `amount` |
+| `{{3}}` | Donation date (Single templates only) | `date` |
+
+**Supported template types:**
+
+| Template | Variables Used | Duplicate Mode |
+|----------|---------------|----------------|
+| NEW Single | `{{1}}` name, `{{2}}` amount, `{{3}}` date | Separate Messages |
+| NEW Multiple | `{{1}}` name, `{{2}}` donation table | Combine List |
+| ACK Single | `{{1}}` name, `{{2}}` amount, `{{3}}` date | Separate Messages |
+| ACK Multiple | `{{1}}` name, `{{2}}` donation table | Combine List |
+| ACK Single No PAN | `{{1}}` name, `{{2}}` amount, `{{3}}` date | Separate Messages |
+| ACK Multiple No PAN | `{{1}}` name, `{{2}}` donation table | Combine List |
+| Doubt Single | `{{1}}` name, `{{2}}` amount, `{{3}}` date | Separate Messages |
+| Doubt Multiple | `{{1}}` name, `{{2}}` donation table | Combine List |
+
+> All template texts must be submitted to Meta for approval before use.
+> Use the `DV_Contacts.xlsx` file as the standard contact sheet for all the above templates.
+
+---
+
 ## Blacklist Management
 
 Prevent specific numbers from receiving future messages:
 1. Navigate to **Blacklist** in the sidebar.
 2. Enter the phone number and an optional reason, then click **Block**.
 3. Blocked numbers are automatically skipped during campaign eligibility checks.
-4. Remove a number from the blacklist using the trash icon.
+4. To remove a number, click the trash icon — a confirmation modal appears asking you to
+   confirm before unblocking. Click **Unblock** to confirm or **Cancel** to dismiss.
 
 ---
 
@@ -140,7 +185,7 @@ To enable delivery status updates (delivered, read):
 - Re-enter credentials in Settings and save.
 
 ### Messages Stuck in "Queued"
-- Increase TPS in Settings -> Operations (default is 1).
+- Increase TPS in Settings -> Operations (default is 5).
 - Check that your WhatsApp credentials are valid — failed sends stay queued.
 
 ### "Template Not Found"

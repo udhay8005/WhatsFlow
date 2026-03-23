@@ -56,6 +56,7 @@ jest.mock('multer', () => {
     return multer;
 });
 
+const { errorHandler } = require('../middleware/errorHandler');
 const whatsappService = require('../services/whatsappService');
 const fs = require('fs');
 
@@ -66,6 +67,7 @@ describe('Media Routes', () => {
         app = express();
         app.use(express.json());
         app.use('/api/media', mediaRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     afterEach(() => {

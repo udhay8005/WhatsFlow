@@ -120,7 +120,9 @@ than on demand.
 
 The app uses SQLite with **WAL (Write-Ahead Logging)** mode for performance.
 
-- **Location:** `database.sqlite` in the project root (dev) or app data directory (installed)
+- **Location (development):** `database.sqlite` in the project root
+- **Location (packaged/installed app):** `%APPDATA%\WhatsFlow\database.sqlite`
+  (i.e. `app.getPath('userData')` — set via `WHATSFLOW_USER_DATA` env var by `electron/main.js`)
 - **Auto-created:** Schema initializes automatically on first run
 - **Backup:** Copy `database.sqlite` while the app is not running
 
@@ -141,7 +143,7 @@ npm run start:prod
 ```
 
 > If port 3000 is already in use when starting the packaged app, the error is logged
-> gracefully (no crash dialog). To free the port:
+> and the process exits cleanly (`process.exit(1)`). To free the port and relaunch:
 > ```powershell
 > npx kill-port 3000
 > ```

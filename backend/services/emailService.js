@@ -63,10 +63,11 @@ const emailService = {
      *              Builds a dual-format (HTML + plain text) email and delivers via SMTP.
      * @param {string} toEmail - Recipient email address.
      * @param {string} textBody - Plain-text message content.
-     * @param {string} [subject='Important Message'] - Email subject line.
+     * @param {string} [subject='Important Message'] - Email subject line (configurable in Settings).
+     * @param {string} [fromName='WhatsFlow Bot'] - Sender display name (configurable in Settings).
      * @returns {Promise<string|false>} Nodemailer messageId on success, false if SMTP not configured, null on error.
      */
-    async sendFallbackEmail(toEmail, textBody, subject = "Important Message") {
+    async sendFallbackEmail(toEmail, textBody, subject = 'Important Message', fromName = 'WhatsFlow Bot') {
         const config = await getSmtpCredentials();
         if (!config) {
             logger.info('Skipping email fallback - SMTP not configured');
@@ -92,7 +93,7 @@ const emailService = {
 
         const fromAddress = config.smtp_from_email || config.smtp_user;
         const mailOptions = {
-            from: `"WhatsFlow Bot" <${fromAddress}>`,
+            from: `"${fromName}" <${fromAddress}>`,
             to: toEmail,
             subject: subject,
             text: textBody, // Plain text for now, could be HTML

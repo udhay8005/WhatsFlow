@@ -17,6 +17,20 @@ const path = require('path');
 const fs = require('fs');
 const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
+const { asyncHandler } = require('../middleware/errorHandler');
+
+/**
+ * @function safeUnlink
+ * @description Best-effort file deletion that never throws. On Windows, antivirus
+ *              software or indexing services can momentarily lock files, causing
+ *              fs.unlinkSync to throw EBUSY.  If the primary delete fails, a
+ *              re-throw would crash the catch block itself — producing an unhandled
+ *              exception instead of a graceful 500 response.
+ * @param {string} filePath - Absolute path to the file to remove.
+ */
+function safeUnlink(filePath) {
+    try { fs.unlinkSync(filePath); } catch (_) { /* best-effort cleanup */ }
+}
 
 /**
  * @function detectMimeType
@@ -41,9 +55,15 @@ function detectMimeType(filePath) {
     return null;
 }
 
+// Use the canonical uploads directory published by server.js via env var.
+// Without this, __dirname resolves from /backend/routes which produced
+// /backend/uploads — a different directory from the /uploads that server.js
+// created, causing uploaded files to be orphaned on disk.
+const uploadsDir = process.env.WHATSFLOW_UPLOADS_DIR || path.join(__dirname, '../uploads');
+
 // Configure multer for file uploads
 const upload = multer({
-    dest: path.join(__dirname, '../uploads'),
+    dest: uploadsDir,
     limits: {
         fileSize: 16 * 1024 * 1024 // 16MB limit
     },
@@ -58,7 +78,7 @@ const upload = multer({
 });
 
 // POST /api/media/upload
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -71,7 +91,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         const allowedMimes = ['image/jpeg', 'image/png', 'video/mp4'];
 
         if (!detectedMime || !allowedMimes.includes(detectedMime)) {
-            fs.unlinkSync(tempPath);
+            safeUnlink(tempPath);
             return res.status(400).json({ error: 'File content does not match an allowed type (JPG, PNG, MP4)' });
         }
 
@@ -82,7 +102,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         const mediaId = await whatsappService.uploadMedia(tempPath, mimeType);
 
         // Cleanup temp file
-        fs.unlinkSync(tempPath);
+        safeUnlink(tempPath);
 
         const mediaType = mimeType.startsWith('image/') ? 'image' : 'video';
 
@@ -92,14 +112,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             uploadedAt: new Date().toISOString()
         });
     } catch (error) {
-        // Cleanup temp file on error
-        if (fs.existsSync(tempPath)) {
-            fs.unlinkSync(tempPath);
-        }
+        // Cleanup temp file on error — safeUnlink never throws, so this cannot
+        // re-trigger the same EBUSY/EPERM that may have caused the original error.
+        safeUnlink(tempPath);
 
         logger.error('[Media Upload] Error:', error);
         res.status(500).json({ error: 'Media upload failed' });
     }
-});
+}));
 
 module.exports = router;

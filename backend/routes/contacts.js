@@ -12,6 +12,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const logger = require('../utils/logger');
+const { asyncHandler } = require('../middleware/errorHandler');
 
 // POST /api/contacts/blacklist - Add to blacklist
 router.post('/blacklist', (req, res) => {
@@ -64,8 +65,40 @@ router.delete('/blacklist/:phone', (req, res) => {
     });
 });
 
+// SQLite hard limit for host parameters per statement (SQLITE_MAX_VARIABLE_NUMBER).
+// Using 999 leaves headroom for all SQLite builds (default is 999; max possible is 32766).
+const SQLITE_CHUNK_SIZE = 999;
+
+/**
+ * @function queryInChunks
+ * @description Runs a parameterised query against an array of values in chunks to
+ *              avoid exceeding SQLite's host-variable limit (~32 766 across all builds).
+ *              Merges all result rows into a single flat array.
+ * @param {string} sqlTemplate - SQL string with a single '/*PARAMS*\/' placeholder that
+ *                               will be replaced with the correct number of '?' markers.
+ * @param {any[]} values - Full array of values to chunk and bind.
+ * @returns {Promise<any[]>} All matching rows across all chunks.
+ */
+function queryInChunks(sqlTemplate, values) {
+    const chunks = [];
+    for (let i = 0; i < values.length; i += SQLITE_CHUNK_SIZE) {
+        chunks.push(values.slice(i, i + SQLITE_CHUNK_SIZE));
+    }
+
+    return chunks.reduce((chain, batch) => {
+        return chain.then(acc => new Promise((resolve, reject) => {
+            const placeholders = batch.map(() => '?').join(',');
+            const sql = sqlTemplate.replace('/*PARAMS*/', placeholders);
+            db.all(sql, batch, (err, rows) => {
+                if (err) reject(err);
+                else resolve(acc.concat(rows));
+            });
+        }));
+    }, Promise.resolve([]));
+}
+
 // POST /api/contacts/check-eligibility - Check Blacklist & Frequency
-router.post('/check-eligibility', async (req, res) => {
+router.post('/check-eligibility', asyncHandler(async (req, res) => {
     const { contacts } = req.body; // Array of { phone }
     if (!contacts || !Array.isArray(contacts)) {
         return res.status(400).json({ error: 'Invalid input' });
@@ -75,37 +108,22 @@ router.post('/check-eligibility', async (req, res) => {
     if (uniqueNumbers.length === 0) return res.json({ blacklisted: [], limited: [] });
 
     try {
-        // 1. Check Blacklist
-        // Create placeholders for IN clause
-        const placeholders = uniqueNumbers.map(() => '?').join(',');
+        // 1. Check Blacklist (chunked to avoid SQLite parameter limit)
+        const blacklistedPromise = queryInChunks(
+            'SELECT phone_number, reason FROM blacklist WHERE phone_number IN (/*PARAMS*/)',
+            uniqueNumbers
+        );
 
-        const blacklistedPromise = new Promise((resolve, reject) => {
-            db.all(
-                `SELECT phone_number, reason FROM blacklist WHERE phone_number IN (${placeholders})`,
-                uniqueNumbers,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows);
-                }
-            );
-        });
-
-        // 2. Check Frequency (Last 24h)
-        const frequencyPromise = new Promise((resolve, reject) => {
-            db.all(
-                `SELECT phone_number, MAX(sent_at) as last_sent 
-                 FROM messages 
-                 WHERE phone_number IN (${placeholders}) 
-                 AND status = 'sent' 
-                 AND sent_at > datetime('now','-24 hours')
-                 GROUP BY phone_number`,
-                uniqueNumbers,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows);
-                }
-            );
-        });
+        // 2. Check Frequency — Last 24 h (chunked)
+        const frequencyPromise = queryInChunks(
+            `SELECT phone_number, MAX(sent_at) as last_sent
+             FROM messages
+             WHERE phone_number IN (/*PARAMS*/)
+             AND status = 'sent'
+             AND sent_at > datetime('now','-24 hours')
+             GROUP BY phone_number`,
+            uniqueNumbers
+        );
 
         const [blacklistedRows, frequencyRows] = await Promise.all([blacklistedPromise, frequencyPromise]);
 
@@ -118,6 +136,6 @@ router.post('/check-eligibility', async (req, res) => {
         logger.error('Eligibility check error:', err);
         res.status(500).json({ error: 'Check failed' });
     }
-});
+}));
 
 module.exports = router;

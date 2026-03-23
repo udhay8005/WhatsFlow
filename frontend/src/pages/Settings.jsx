@@ -20,7 +20,8 @@ export default function Settings() {
     const [formData, setFormData] = useState({
         wa_access_token: '', wa_phone_id: '', wa_waba_id: '', webhook_verify_token: '', wa_app_secret: '',
         smtp_host: '', smtp_port: '', smtp_user: '', smtp_pass: '', smtp_secure: 'false',
-        max_tps: '1'
+        smtp_from_email: '', smtp_from_name: '', email_fallback_subject: '',
+        max_tps: '5'
     });
     const [status, setStatus] = useState({});
     const [loading, setLoading] = useState(false);
@@ -37,9 +38,14 @@ export default function Settings() {
             const res = await apiService.getConfigStatus();
             const config = res.data.configured || {};
             setStatus(config);
-            if (config.max_tps) {
-                setFormData(prev => ({ ...prev, max_tps: config.max_tps }));
-            }
+            // Restore plain-value fields (not secrets) so they show current values
+            setFormData(prev => ({
+                ...prev,
+                max_tps: config.max_tps || '5',
+                smtp_from_email: config.smtp_from_email || '',
+                smtp_from_name: config.smtp_from_name || '',
+                email_fallback_subject: config.email_fallback_subject || ''
+            }));
         } catch {
             addToast('Failed to load configuration status', 'error');
         }
@@ -159,8 +165,9 @@ export default function Settings() {
                 if (formData[k]) payload[k] = formData[k];
             });
         } else {
-            ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure'].forEach(k => {
-                if (formData[k]) payload[k] = formData[k];
+            ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure',
+             'smtp_from_email', 'smtp_from_name', 'email_fallback_subject'].forEach(k => {
+                if (formData[k] !== undefined) payload[k] = formData[k];
             });
         }
 
@@ -254,7 +261,7 @@ export default function Settings() {
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-sm font-medium">
                                         <span className="text-gray-700 dark:text-gray-300">Target Speed</span>
-                                        <span className="text-blue-600 dark:text-blue-400">{formData.max_tps || 1} msg/sec</span>
+                                        <span className="text-blue-600 dark:text-blue-400">{formData.max_tps || 5} msg/sec</span>
                                     </div>
                                     <input
                                         type="range"
@@ -262,7 +269,7 @@ export default function Settings() {
                                         min="1"
                                         max="100"
                                         step="1"
-                                        value={formData.max_tps || 1}
+                                        value={formData.max_tps || 5}
                                         onChange={handleChange}
                                         className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600"
                                     />
@@ -354,6 +361,47 @@ export default function Settings() {
                                 onToggle={() => toggleShow('smtp_pass')}
                                 configured={status.smtp_pass}
                             />
+
+                            {/* Sender identity */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <InputField
+                                    label="From Email Address"
+                                    name="smtp_from_email"
+                                    value={formData.smtp_from_email}
+                                    onChange={handleChange}
+                                    placeholder="noreply@yourdomain.com"
+                                />
+                                <InputField
+                                    label="From Name (Sender Display Name)"
+                                    name="smtp_from_name"
+                                    value={formData.smtp_from_name}
+                                    onChange={handleChange}
+                                    placeholder="WhatsFlow Bot"
+                                />
+                            </div>
+
+                            {/* Fallback email subject */}
+                            <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-4">
+                                <h4 className="text-sm font-semibold text-orange-900 dark:text-orange-200 mb-1 flex items-center gap-2">
+                                    ✉️ Fallback Email Subject
+                                </h4>
+                                <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
+                                    This subject line is used when WhatsApp delivery fails and the message is sent via email instead.
+                                    Leave blank to use the default: <em>"Important Message"</em>.
+                                </p>
+                                <input
+                                    type="text"
+                                    name="email_fallback_subject"
+                                    value={formData.email_fallback_subject}
+                                    onChange={handleChange}
+                                    placeholder="Important Message"
+                                    maxLength={150}
+                                    className="w-full bg-white dark:bg-gray-900 border border-orange-300 dark:border-orange-700 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+                                />
+                                <p className="text-xs text-gray-400 mt-1 text-right">
+                                    {formData.email_fallback_subject.length}/150
+                                </p>
+                            </div>
 
                             {/* Test SMTP Connection */}
                             {formData.smtp_host && formData.smtp_user && formData.smtp_pass && (

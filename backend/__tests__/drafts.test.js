@@ -2,17 +2,30 @@ const request = require('supertest');
 const express = require('express');
 const campaignsRouter = require('../routes/campaigns');
 const { validateCampaignCreation } = require('../middleware/validators');
+const { errorHandler } = require('../middleware/errorHandler');
 
 // Mock Dependencies
-jest.mock('../database', () => ({
-    serialize: jest.fn(cb => cb()),
-    run: jest.fn(function (sql, params, cb) {
-        const callback = typeof params === 'function' ? params : cb;
-        if (callback) callback.call({ lastID: 100, changes: 1 }, null);
-    }),
-    get: jest.fn((sql, params, cb) => cb(null, { id: 1 })), // Mock existing campaign
-    all: jest.fn(),
-}));
+jest.mock('../database', () => {
+    // Helper: create a set of mock db methods for a connection
+    const makeMethods = () => ({
+        run: jest.fn(function (sql, params, cb) {
+            const callback = typeof params === 'function' ? params : cb;
+            if (callback) callback.call({ lastID: 100, changes: 1 }, null);
+        }),
+        get: jest.fn((sql, params, cb) => {
+            const callback = typeof params === 'function' ? params : cb;
+            if (callback) callback(null, { id: 1 });
+        }),
+        all: jest.fn(),
+    });
+    const mockDb = {
+        serialize: jest.fn(cb => cb()),
+        ...makeMethods(),
+    };
+    // campaigns.js reads db.dbWriter at module scope for its transaction connection
+    mockDb.dbWriter = makeMethods();
+    return mockDb;
+});
 
 jest.mock('../services/whatsappService', () => ({
     getTemplates: jest.fn(),
@@ -28,6 +41,7 @@ describe('Draft Campaigns Tests', () => {
         // validators need to be mocked or used? We want to test VALIDATION logic.
         // So we should use the REAL router which uses REAL validators.
         app.use('/api/campaigns', campaignsRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     afterEach(() => {

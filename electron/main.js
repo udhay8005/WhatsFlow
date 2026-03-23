@@ -37,6 +37,12 @@ if (!isDev) {
     try {
         process.env.NODE_ENV = 'production';
 
+        // Expose the Electron userData directory to all backend modules via env var.
+        // All mutable files — database, logs, uploaded media — are written here so
+        // the app never tries to write into its own read-only installation directory
+        // (e.g. C:\Program Files\WhatsFlow) which would cause EPERM / SQLITE_READONLY.
+        process.env.WHATSFLOW_USER_DATA = app.getPath('userData');
+
         // Auto-enable tunnel with a stable, per-installation subdomain
         if (!process.env.ENABLE_TUNNEL) {
             process.env.ENABLE_TUNNEL = 'true';
@@ -152,6 +158,11 @@ app.on('before-quit', () => {
 
     try {
         const db = require('../backend/database');
+        if (db.dbWriter) {
+            db.dbWriter.close((err) => {
+                if (err) console.error('Error closing writer database:', err);
+            });
+        }
         db.close((err) => {
             if (err) console.error('Error closing database:', err);
         });

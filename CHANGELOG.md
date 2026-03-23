@@ -11,6 +11,36 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 > Changes on the `develop` branch not yet released.
 
+### Fixed
+- **Blacklist confirmation dialog** (`frontend/src/pages/Blacklist.jsx`) — replaced native
+  `window.confirm()` with an inline React modal overlay (`confirmDelete` state). The native
+  browser dialog blocked the React update cycle and caused CDP/DevTools automation timeouts.
+  The new modal renders a dedicated "Unblock Number?" overlay with Cancel and Unblock buttons,
+  fully styled with Tailwind CSS and dark-mode aware. `handleDelete` now sets `confirmDelete`
+  state; a new `confirmUnblock` async function executes the actual API call after confirmation.
+
+- **Fail-closed blacklist check** (`worker.js`) — if the blacklist `db.get` returns an error (e.g. `SQLITE_BUSY`), the worker now backs off and retries instead of assuming the contact is safe to message. Previously a database error silently bypassed the blacklist check.
+- **Campaign update contact upsert** (`routes/campaigns.js`) — `PUT /api/campaigns/:id` now uses `INSERT ... ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email` instead of `INSERT OR IGNORE`, which was silently discarding updated email addresses for existing contacts.
+- **Ghost instance prevention** (`server.js`) — `EADDRINUSE` handler now calls `process.exit(1)` after logging the error. Previously the process stayed alive without binding to the port, causing two Electron windows to manipulate the same database simultaneously.
+
+### Security
+- **AES-256-GCM encryption** (`services/cryptoService.js`) — replaced the previous AES-256-CBC/Base64 (`DEV_ENC:`) fallback with AES-256-GCM using a per-installation 32-byte random key stored in `encryption.key` in the user data directory. Key creation is atomic (write to `.tmp` + `fs.renameSync`); corrupted keys are auto-detected (wrong byte length), deleted, and regenerated. Electron `safeStorage` remains the primary store where available.
+
+### Architecture
+- **Dual SQLite connections** (`database.js`) — added a dedicated `dbWriter` connection (`module.exports.dbWriter`) exclusively for `BEGIN/COMMIT/ROLLBACK` transactions in `routes/campaigns.js`. The shared `db` connection is now read-only for worker/stats/settings queries. Both connections use `PRAGMA busy_timeout = 5000` to wait up to 5 seconds for write locks.
+- **`withWriteLock` mutex** (`routes/campaigns.js`) — a Promise-chain queue serialises concurrent campaign write transactions on `dbWriter`, preventing two simultaneous `POST /api/campaigns` calls from issuing `BEGIN` at the same time.
+- **`asyncHandler` on all async routes** — all nine async Express route handlers now wrap with `asyncHandler` from `middleware/errorHandler.js`, so rejected promises are forwarded to the global error handler instead of leaving requests hanging indefinitely.
+- **User-data paths** (`electron/main.js`, `server.js`, `database.js`, `utils/logger.js`, `routes/settings.js`, `routes/media.js`) — all mutable state (database, logs, uploads, encryption key) now resolves through `process.env.WHATSFLOW_USER_DATA` (set to `app.getPath('userData')` by the Electron main process). This prevents `EPERM` errors when running from a read-only install directory (`C:\Program Files`).
+- **SPA wildcard placed after API routes** (`server.js`) — the `app.get('*', ...)` catch-all is now registered after all API and route handlers, removing the need for a manual path-prefix whitelist.
+- **`withTimeout(30 s)` on network calls** (`worker.js`) — both `whatsappService.sendMessage` and `emailService.sendFallbackEmail` are now raced against a 30-second timer. The timer is cleared when the call settles, preventing timer accumulation on long-running workers.
+- **`safeUnlink` helper** (`routes/media.js`) — file cleanup after upload is wrapped in a best-effort try/catch to prevent Windows `EBUSY`/`EPERM` errors (from antivirus file locks) from crashing the request.
+- **Windows-safe log truncation** (`routes/settings.js`) — `POST /api/settings/clear-logs` now uses `fs.writeFileSync(path, '')` (truncate) instead of `fs.unlinkSync` (delete). Winston holds log files open in append mode; deleting open files throws `EBUSY` on Windows.
+
+### Tests
+- **Backend test count: 60 passing** (was 59) — new test `"should back off without sending when blacklist lookup fails (fail-closed)"` added to `worker.test.js`.
+- **`worker.test.js` fixed** — `worker.stopWorker()` added to `beforeEach` to reset the `isRunning` flag between tests; each test now also mocks the startup `db.run("UPDATE messages SET status='queued' WHERE status='processing'")` call.
+- **`dbWriter` mock added** to `campaigns.test.js` and `drafts.test.js` (`mockDb.dbWriter = { run, get, all }`) to match the dual-connection architecture.
+
 ---
 
 ## [1.0.1] — 2026-03-22
@@ -105,7 +135,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - **"Cannot GET /"** error in packaged exe — static file serving corrected for
   `NODE_ENV=production` builds.
-- **EADDRINUSE** crash on port 3000 — graceful error handler added to `server.listen()`.
+- **EADDRINUSE** on port 3000 — error handler added to `server.listen()`; in the current release the process exits cleanly (`process.exit(1)`) when the port is in use.
 
 ---
 

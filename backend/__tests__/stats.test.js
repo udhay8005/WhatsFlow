@@ -1,6 +1,7 @@
 const request = require('supertest');
 const express = require('express');
 const statsRouter = require('../routes/stats');
+const { errorHandler } = require('../middleware/errorHandler');
 
 // Mock dependencies
 jest.mock('../database', () => ({
@@ -17,6 +18,7 @@ describe('Stats Routes', () => {
         app = express();
         app.use(express.json());
         app.use('/api/stats', statsRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     afterEach(() => {

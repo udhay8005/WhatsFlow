@@ -114,9 +114,7 @@ if (require.main === module || process.env.NODE_ENV === 'production') {
 
 ### Issue: "Port 3000 is already in use"
 
-> **Note (v1.0.1+):** The packaged app handles this error gracefully — it logs the conflict
-> and does not show a crash dialog. However, the app will not start correctly until the port
-> is freed.
+> **Note:** The packaged app handles this error by logging the conflict and calling `process.exit(1)`. The app window will close automatically. Free the port and relaunch.
 
 **Symptoms:**
 ```
@@ -380,6 +378,8 @@ Do not delete them while the app is running.
 Remove-Item database.sqlite-wal, database.sqlite-shm
 ```
 
+> **Why WAL mode helps:** WhatsFlow uses `PRAGMA busy_timeout = 5000` on both database connections so that short lock contentions (up to 5 seconds) are handled automatically without throwing `SQLITE_BUSY`. If you still see this error, it means a process held the lock longer than 5 seconds — follow the steps above.
+
 **Step 3: Restart app**
 ```powershell
 npm run start:prod
@@ -488,8 +488,9 @@ SELECT * FROM messages WHERE status = 'queued' LIMIT 100;
 
 **Step 1: Check worker sleep interval**
 ```javascript
-// In worker.js, verify:
-await new Promise(resolve => setTimeout(resolve, 1000)) // Sleep 1 second
+// In worker.js, verify POLL_INTERVAL is used (not a tight loop):
+// setTimeout(() => processQueue(io), POLL_INTERVAL) // 2000ms default
+// Also check withTimeout — each send is limited to 30 seconds max
 ```
 
 **Step 2: Disable unnecessary features temporarily**
@@ -581,6 +582,8 @@ sqlite3 database.sqlite "SELECT COUNT(*) FROM campaigns;"
 
 # 3. Check logs
 Get-Content backend/logs/combined.log -Tail 20
+# In packaged app, logs are in user data directory:
+# e.g. C:\Users\<name>\AppData\Roaming\WhatsFlow\logs\combined.log
 
 # 4. Check process status
 Get-Process | Where-Object {$_.ProcessName -like "*node*" -or $_.ProcessName -like "*electron*"}

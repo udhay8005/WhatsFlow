@@ -74,50 +74,72 @@ function readFileAsText(file: File): Promise<string> {
 
 /**
  * Parses an RFC-4180-compliant CSV string into a 2-D array of strings.
- * Handles double-quote escaping ("") and quoted fields that contain commas.
+ *
+ * Uses a character-by-character state machine so that quoted fields
+ * containing embedded newlines (allowed by RFC-4180 §2.6) are handled
+ * correctly. The previous line-split approach broke those fields.
+ *
+ * Handles:
+ *   - Fields wrapped in double-quotes
+ *   - Escaped double-quotes inside quoted fields ("")
+ *   - Quoted fields that span multiple lines (embedded \n / \r\n)
+ *   - CRLF and LF line endings
+ *   - Blank / all-whitespace rows (skipped)
  *
  * @param text - Raw file text content.
  * @returns Array of rows, each row being an array of cell strings.
- *          Blank lines are skipped.
  */
 function parseCSV(text: string): any[][] {
     const rows: any[][] = [];
-    const lines = text.split(/\r?\n/);
+    let currentRow: string[] = [];
+    let currentCell = '';
+    let inQuotes = false;
 
-    for (const line of lines) {
-        if (line.trim() === '') continue;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
 
-        // Handle quoted fields properly
-        const cells: string[] = [];
-        let current = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-
-            if (inQuotes) {
-                if (ch === '"' && line[i + 1] === '"') {
-                    // Escaped double-quote inside a quoted field
-                    current += '"';
-                    i++;
-                } else if (ch === '"') {
-                    inQuotes = false;
-                } else {
-                    current += ch;
-                }
+        if (inQuotes) {
+            if (ch === '"' && next === '"') {
+                // Escaped double-quote inside a quoted field ("" → ")
+                currentCell += '"';
+                i++;
+            } else if (ch === '"') {
+                // Closing quote — exit quoted mode
+                inQuotes = false;
             } else {
-                if (ch === '"') {
-                    inQuotes = true;
-                } else if (ch === ',') {
-                    cells.push(current);
-                    current = '';
-                } else {
-                    current += ch;
-                }
+                // Any character, including embedded newlines, belongs to the cell
+                currentCell += ch;
+            }
+        } else {
+            if (ch === '"') {
+                inQuotes = true;
+            } else if (ch === ',') {
+                currentRow.push(currentCell);
+                currentCell = '';
+            } else if (ch === '\r' && next === '\n') {
+                // CRLF end-of-row
+                currentRow.push(currentCell);
+                currentCell = '';
+                if (currentRow.some(c => c.trim() !== '')) rows.push(currentRow);
+                currentRow = [];
+                i++; // consume the \n
+            } else if (ch === '\n') {
+                // LF end-of-row
+                currentRow.push(currentCell);
+                currentCell = '';
+                if (currentRow.some(c => c.trim() !== '')) rows.push(currentRow);
+                currentRow = [];
+            } else {
+                currentCell += ch;
             }
         }
-        cells.push(current);
-        rows.push(cells);
+    }
+
+    // Flush the last row (file may not end with a newline)
+    if (currentCell !== '' || currentRow.length > 0) {
+        currentRow.push(currentCell);
+        if (currentRow.some(c => c.trim() !== '')) rows.push(currentRow);
     }
 
     return rows;

@@ -1,32 +1,48 @@
 const request = require('supertest');
 const express = require('express');
 const campaignsRouter = require('../routes/campaigns');
+const { errorHandler } = require('../middleware/errorHandler');
 
-// Mock database
-jest.mock('../database', () => ({
-    serialize: jest.fn((callback) => callback()),
-    run: jest.fn((sql, params, callback) => {
-        if (typeof callback === 'function') {
-            callback.call({ lastID: 1 }, null);
-        }
-    }),
-    get: jest.fn((sql, params, callback) => {
-        callback(null, {
-            id: 1,
-            name: 'Test Campaign',
-            template_name: 'hello_world',
-            status: 'active',
-            total_count: 10,
-            success_count: 0,
-            failed_count: 0,
-        });
-    }),
-    all: jest.fn((sql, params, callback) => {
-        callback(null, [
-            { id: 1, name: 'Campaign 1', template_name: 'hello_world', status: 'active' },
-        ]);
-    }),
-}));
+// Mock database — includes dbWriter for the dedicated transaction connection
+// used by campaigns.js (const txnDb = db.dbWriter).
+jest.mock('../database', () => {
+    const mockDb = {
+        serialize: jest.fn((callback) => callback()),
+        run: jest.fn((sql, params, callback) => {
+            if (typeof callback === 'function') {
+                callback.call({ lastID: 1 }, null);
+            }
+        }),
+        get: jest.fn((sql, params, callback) => {
+            callback(null, {
+                id: 1,
+                name: 'Test Campaign',
+                template_name: 'hello_world',
+                status: 'active',
+                total_count: 10,
+                success_count: 0,
+                failed_count: 0,
+            });
+        }),
+        all: jest.fn((sql, params, callback) => {
+            callback(null, [
+                { id: 1, name: 'Campaign 1', template_name: 'hello_world', status: 'active' },
+            ]);
+        }),
+    };
+    mockDb.dbWriter = {
+        run: jest.fn((sql, params, callback) => {
+            if (typeof callback === 'function') {
+                callback.call({ lastID: 1 }, null);
+            }
+        }),
+        get: jest.fn((sql, params, callback) => {
+            callback(null, { id: 1 });
+        }),
+        all: jest.fn(),
+    };
+    return mockDb;
+});
 
 // Mock WhatsApp service
 jest.mock('../services/whatsappService', () => ({
@@ -43,6 +59,7 @@ describe('Campaigns API Routes', () => {
         app.use(express.json());
         app.set('io', { emit: jest.fn() }); // Mock Socket.IO
         app.use('/api/campaigns', campaignsRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     afterAll(() => {

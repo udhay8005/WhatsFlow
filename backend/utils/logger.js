@@ -10,11 +10,15 @@
 const winston = require('winston');
 const path = require('path');
 
-// Create logs directory if it doesn't exist
+// Create logs directory if it doesn't exist.
+// Uses WHATSFLOW_USER_DATA (set by Electron main before requiring the backend)
+// so log files are written to AppData, not the read-only install directory.
 const fs = require('fs');
-const logsDir = path.join(__dirname, '../logs');
+const logsDir = process.env.WHATSFLOW_USER_DATA
+    ? path.join(process.env.WHATSFLOW_USER_DATA, 'logs')
+    : path.join(__dirname, '../logs');
 if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir);
+    fs.mkdirSync(logsDir, { recursive: true });
 }
 
 // Define log format

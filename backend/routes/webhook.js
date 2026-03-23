@@ -25,6 +25,7 @@ router.use(express.json({
 const db = require('../database');
 const cryptoService = require('../services/cryptoService');
 const logger = require('../utils/logger');
+const { asyncHandler } = require('../middleware/errorHandler');
 
 /**
  * @function getVerifyToken
@@ -58,7 +59,7 @@ async function getAppSecret() {
 }
 
 // 1. Verification Endpoint (GET)
-router.get('/', async (req, res) => {
+router.get('/', asyncHandler(async (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
@@ -81,10 +82,10 @@ router.get('/', async (req, res) => {
     } else {
         res.sendStatus(400);
     }
-});
+}));
 
 // 2. Event Listener (POST) with Signature Validation
-router.post('/', async (req, res) => {
+router.post('/', asyncHandler(async (req, res) => {
     // Webhook signature validation (HMAC SHA-256)
     const signature = req.headers['x-hub-signature-256'];
     const appSecret = await getAppSecret();
@@ -167,6 +168,6 @@ router.post('/', async (req, res) => {
         logger.info(`Unrecognised webhook object type: ${body.object}`);
         res.sendStatus(200);
     }
-});
+}));
 
 module.exports = router;

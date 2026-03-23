@@ -19,7 +19,7 @@ const logger = require('./utils/logger');
 
 // Config
 const POLL_INTERVAL = 2000; // 2 seconds
-const RATE_LIMIT_TPS = 1; // Very conservative default
+const RATE_LIMIT_TPS = 5; // Default TPS (fallback if DB lookup fails)
 
 // Error codes that are permanent failures — no point retrying
 // 131026: Recipient phone number not on WhatsApp
@@ -37,6 +37,33 @@ const WHATSAPP_ERROR_CODES_FOR_FALLBACK = [131026, 131051, 131031];
 // 130429: Rate limit hit; 131056: Pair rate limit hit
 const WHATSAPP_ERROR_CODES_RATE_LIMIT = [130429, 131056];
 const RATE_LIMIT_BACKOFF_MS = 60000; // 60s pause when rate limited
+
+// Maximum time to wait for a single outbound network call (WhatsApp API or SMTP).
+// Without this, a hung axios socket or unresponsive SMTP server would leave
+// proceedToSend's Promise permanently unsettled, stalling the entire worker.
+const SEND_TIMEOUT_MS = 30000; // 30 seconds
+
+/**
+ * @function withTimeout
+ * @description Races a Promise against a rejection timer. Rejects with a clear
+ *              timeout error if the underlying operation does not settle within
+ *              `ms` milliseconds. Prevents hung network connections from
+ *              permanently stalling the queue worker's Promise chain.
+ * @param {Promise<any>} promise - The operation to time-box.
+ * @param {number} ms - Maximum allowed duration in milliseconds.
+ * @param {string} label - Short description shown in the timeout error message.
+ * @returns {Promise<any>} Resolves with the original value or rejects on timeout.
+ */
+function withTimeout(promise, ms, label) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    // .finally() clears the timer as soon as the main promise settles, preventing
+    // thousands of 30-second lingering timers from accumulating in the event loop
+    // during high-throughput queue processing.
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 let isRunning = false;
 let errorCount = 0;
@@ -92,11 +119,40 @@ function getRateLimit(cb) {
 }
 
 /**
+ * @function getFallbackEmailConfig
+ * @description Reads email fallback customisation from app_config.
+ *              Returns subject and fromName with sensible defaults if not configured.
+ * @returns {Promise<{subject: string, fromName: string}>}
+ */
+function getFallbackEmailConfig() {
+    return new Promise((resolve) => {
+        const crypto = require('./services/cryptoService');
+        db.all(
+            "SELECT key, value FROM app_config WHERE key IN ('email_fallback_subject', 'smtp_from_name')",
+            [],
+            (err, rows) => {
+                if (err || !rows) return resolve({ subject: 'Important Message', fromName: 'WhatsFlow Bot' });
+                const map = {};
+                rows.forEach(r => {
+                    try { map[r.key] = crypto.decrypt(r.value); } catch (_) { /* ignore */ }
+                });
+                resolve({
+                    subject: map.email_fallback_subject || 'Important Message',
+                    fromName: map.smtp_from_name || 'WhatsFlow Bot'
+                });
+            }
+        );
+    });
+}
+
+/**
  * @function processQueue
- * @description Core polling loop. Fetches one eligible message per tick, acquires
- *              an optimistic lock (queued → processing), then delegates to
- *              proceedToSend(). Reschedules itself via setTimeout for rate-limiting
- *              and uses exponential backoff on DB errors.
+ * @description Core polling loop. Fetches one eligible message per tick, checks
+ *              whether the recipient is blacklisted (marking failed immediately so
+ *              campaign counters advance), acquires an optimistic lock
+ *              (queued → processing), then delegates to proceedToSend().
+ *              Reschedules itself via setTimeout for rate-limiting and uses
+ *              exponential backoff on DB errors.
  * @param {import('socket.io').Server} io - Socket.IO server instance.
  */
 function processQueue(io) {
@@ -105,17 +161,21 @@ function processQueue(io) {
     // 1. Get dynamic rate limit first
     getRateLimit((currentTps) => {
 
-        // 2. Fetch next queued or retry-eligible message (excluding blacklisted contacts)
+        // 2. Fetch next queued or retry-eligible message.
+        // Blacklist exclusion is intentionally NOT done here via SQL JOIN — a JOIN
+        // with WHERE bl.phone_number IS NULL hides blacklisted messages silently,
+        // leaving them queued forever and preventing success_count + failed_count
+        // from ever reaching total_count (campaign never completes).
+        // Instead, a per-message blacklist check is done below and any hit is
+        // immediately marked 'failed' so campaign counters advance correctly.
         const sql = `
             SELECT m.*, c.template_name, c.template_language, c.name as campaign_name, c.media_id, c.media_type, ct.email, ct.email_opt_in
             FROM messages m
             JOIN campaigns c ON m.campaign_id = c.id
             LEFT JOIN contacts ct ON m.contact_id = ct.id
-            LEFT JOIN blacklist bl ON m.phone_number = bl.phone_number
             WHERE m.status IN ('queued', 'processing')
               AND m.retry_count < m.max_retries
               AND c.status = 'active'
-              AND bl.phone_number IS NULL
               AND (c.scheduled_at IS NULL OR datetime(c.scheduled_at) <= datetime('now'))
             ORDER BY m.id ASC
             LIMIT 1
@@ -140,33 +200,61 @@ function processQueue(io) {
                 return;
             }
 
-            // 3. Process Message
-            logger.info(`Processing Msg ${msg.id} for ${msg.phone_number} (Tps: ${currentTps})`);
-
-            // Mark as Processing with Optimistic Locking
-            // Only proceed if we successfully transition from queued -> processing
-            // or if we catch a stuck 'processing' item we just selected
-            db.run("UPDATE messages SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('queued', 'processing')", [msg.id], function (err) {
-                if (err) {
-                    logger.error('Failed to lock message:', err);
-                    setTimeout(() => processQueue(io), 100);
-                    return;
-                }
-
-                // If changes == 0, another worker stole it, or it was cancelled. Skip.
-                if (this.changes === 0) {
-                    logger.warn(`Race condition detected for Msg ${msg.id}, skipping...`);
-                    setTimeout(() => processQueue(io), 100);
-                    return;
-                }
-
-                // Lock acquired, proceed to send
-                proceedToSend(msg, currentTps, io).catch(err => {
-                    logger.error(`Unhandled error in proceedToSend for Msg ${msg.id}:`, err);
-                    // Mark as failed to prevent infinite loop
-                    db.run("UPDATE messages SET status='failed', error_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        ['Internal processing error', msg.id]);
+            // 3. Check blacklist before acquiring lock — mark failed immediately so
+            //    campaign counters (success_count + failed_count) advance and the
+            //    campaign can eventually reach 'completed' status.
+            db.get('SELECT 1 FROM blacklist WHERE phone_number = ?', [msg.phone_number], (blErr, blRow) => {
+                if (blErr) {
+                    // Database error — do NOT assume the contact is safe to message.
+                    // Back off and retry on the next poll cycle so we never send to a
+                    // blacklisted number just because the lookup failed (e.g. SQLITE_BUSY).
+                    logger.error(`Blacklist lookup failed for msg ${msg.id}:`, blErr);
                     setTimeout(() => processQueue(io), POLL_INTERVAL);
+                    return;
+                }
+
+                if (blRow) {
+                    logger.info(`Msg ${msg.id} skipped — ${msg.phone_number} is blacklisted`);
+                    db.run(
+                        "UPDATE messages SET status='failed', error_reason='Contact is blacklisted', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        [msg.id],
+                        () => {
+                            updateCampaignStats(msg.campaign_id, 'failed', io);
+                            io.emit('status_update', { id: msg.id, status: 'failed' });
+                            // Poll immediately — no need to wait a full interval
+                            setTimeout(() => processQueue(io), 100);
+                        }
+                    );
+                    return;
+                }
+
+                // 4. Process Message — mark as processing with optimistic lock
+                logger.info(`Processing Msg ${msg.id} for ${msg.phone_number} (Tps: ${currentTps})`);
+
+                // Only proceed if we successfully transition from queued -> processing
+                // or if we catch a stuck 'processing' item we just selected
+                db.run("UPDATE messages SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('queued', 'processing')", [msg.id], function (err) {
+                    if (err) {
+                        logger.error('Failed to lock message:', err);
+                        setTimeout(() => processQueue(io), 100);
+                        return;
+                    }
+
+                    // If changes == 0, another worker stole it, or it was cancelled. Skip.
+                    if (this.changes === 0) {
+                        logger.warn(`Race condition detected for Msg ${msg.id}, skipping...`);
+                        setTimeout(() => processQueue(io), 100);
+                        return;
+                    }
+
+                    // Lock acquired, proceed to send
+                    proceedToSend(msg, currentTps, io).catch(err => {
+                        logger.error(`Unhandled error in proceedToSend for Msg ${msg.id}:`, err);
+                        // Mark as failed to prevent infinite loop
+                        db.run("UPDATE messages SET status='failed', error_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                            ['Internal processing error', msg.id]);
+                        setTimeout(() => processQueue(io), POLL_INTERVAL);
+                    });
                 });
             });
 
@@ -206,14 +294,19 @@ async function proceedToSend(msg, currentTps, io) {
             components.push({ type: 'body', parameters: bodyParams });
         }
 
-        // A. Attempt WhatsApp
-        const waRes = await whatsappService.sendMessage(
-            msg.phone_number,
-            msg.template_name,
-            msg.template_language || 'en_US',
-            components,
-            msg.media_id,
-            msg.media_type
+        // A. Attempt WhatsApp — wrapped in withTimeout so a hung axios connection
+        //    cannot permanently stall the worker's Promise chain.
+        const waRes = await withTimeout(
+            whatsappService.sendMessage(
+                msg.phone_number,
+                msg.template_name,
+                msg.template_language || 'en_US',
+                components,
+                msg.media_id,
+                msg.media_type
+            ),
+            SEND_TIMEOUT_MS,
+            `WhatsApp send (msg ${msg.id})`
         );
 
         // Success
@@ -253,9 +346,18 @@ async function proceedToSend(msg, currentTps, io) {
         if (isFallbackEligible && msg.email && msg.email_opt_in) {
             logger.info(`Attempting Email Fallback for ${msg.email}`);
             try {
-                const emailId = await emailService.sendFallbackEmail(
-                    msg.email,
-                    `Hello,\n\nWe tried to reach you on WhatsApp but were unable to deliver the message.\n\nCampaign: ${msg.campaign_name}\nTemplate: ${msg.template_name}\n\nPlease check your WhatsApp number or contact support.`
+                const { subject, fromName } = await getFallbackEmailConfig();
+                // Wrap email send in withTimeout — a misconfigured SMTP server
+                // can hang indefinitely if no socket timeout is set in nodemailer.
+                const emailId = await withTimeout(
+                    emailService.sendFallbackEmail(
+                        msg.email,
+                        `Hello,\n\nWe tried to reach you on WhatsApp but were unable to deliver the message.\n\nCampaign: ${msg.campaign_name}\nTemplate: ${msg.template_name}\n\nPlease check your WhatsApp number or contact support.`,
+                        subject,
+                        fromName
+                    ),
+                    SEND_TIMEOUT_MS,
+                    `Email fallback (msg ${msg.id})`
                 );
 
                 if (emailId) {

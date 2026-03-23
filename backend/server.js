@@ -21,13 +21,21 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { apiAuth, issueToken } = require('./middleware/auth');
 
 const app = express();
-// Ensure uploads directory exists
+// Ensure uploads directory exists.
+// WHATSFLOW_USER_DATA is set by Electron main before requiring this module; it
+// points to the writable AppData folder.  The resolved path is written back into
+// process.env.WHATSFLOW_UPLOADS_DIR so every route module (media.js, settings.js)
+// resolves the exact same physical directory — eliminating the previous mismatch
+// where server.js created root/uploads but media.js wrote into backend/uploads.
 const fs = require('fs');
 const path = require('path');
-const uploadsDir = path.join(__dirname, '../uploads');
+const uploadsDir = process.env.WHATSFLOW_USER_DATA
+    ? path.join(process.env.WHATSFLOW_USER_DATA, 'uploads')
+    : path.join(__dirname, '../uploads');
+process.env.WHATSFLOW_UPLOADS_DIR = uploadsDir; // shared canonical path for route modules
 if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
-    logger.info('Created missing uploads directory');
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    logger.info('Created uploads directory: ' + uploadsDir);
 }
 
 const server = http.createServer(app);
@@ -78,19 +86,15 @@ app.use((req, res, next) => {
     express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
 });
 
-// Serve frontend in production
+// Serve static frontend assets in production.
+// The SPA catch-all wildcard is intentionally registered AFTER all API routes
+// below so Express matches specific routes first — no fragile path-prefix
+// whitelist needed. frontendPath is kept module-scoped for the deferred wildcard.
+let frontendPath = null;
 if (process.env.NODE_ENV === 'production') {
-    const frontendPath = path.join(__dirname, '../frontend/dist');
+    frontendPath = path.join(__dirname, '../frontend/dist');
     app.use(express.static(frontendPath));
     logger.info('Serving frontend from: ' + frontendPath);
-
-    // SPA fallback — send index.html for any non-API route
-    app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/webhook') || req.path.startsWith('/health')) {
-            return next();
-        }
-        res.sendFile(path.join(frontendPath, 'index.html'));
-    });
 }
 
 // Make io accessible in routes
@@ -128,6 +132,16 @@ app.use('/api/media', require('./routes/media'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/contacts', require('./routes/contacts'));
 
+// SPA fallback — registered here, AFTER every API/auth/webhook/health route, so
+// Express only reaches this handler when no specific route matched the request.
+// This removes the need for the fragile path-prefix whitelist that was previously
+// required when the wildcard was placed before the API routes.
+if (frontendPath) {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+}
+
 const { startWorker, stopWorker } = require('./worker');
 const { startCronJobs } = require('./cron');
 const { startTunnel, stopTunnel } = require('./tunnelManager');
@@ -156,6 +170,7 @@ if (require.main === module || process.env.NODE_ENV === 'production') {
     }).on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
             logger.error(`Port ${PORT} is already in use. Close other instances and restart.`);
+            process.exit(1);
         } else {
             logger.error('Server error: ' + err.message);
             throw err;
@@ -190,9 +205,15 @@ async function gracefulShutdown(signal) {
     logger.info(`${signal} received, closing server gracefully`);
     await stopTunnel();
     stopWorker();
+    // Close both the reader and writer database connections
+    if (db.dbWriter) {
+        db.dbWriter.close((err) => {
+            if (err) logger.error('Error closing writer connection:', err);
+        });
+    }
     db.close((err) => {
         if (err) logger.error('Error closing database:', err);
-        else logger.info('Database connection closed');
+        else logger.info('Database connections closed');
     });
     server.close(() => {
         logger.info('HTTP server closed');

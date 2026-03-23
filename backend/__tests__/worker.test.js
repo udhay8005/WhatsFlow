@@ -25,12 +25,17 @@ describe('Worker Queue', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockIo = { emit: jest.fn() };
+        // Reset isRunning so each test gets a fresh startWorker → processQueue call
+        worker.stopWorker();
         // Prevent infinite loops by mocking setTimeout to NOT run callback automatically
         // We will test single iteration logic
         global.setTimeout = jest.fn();
     });
 
     it('should process a queued message successfully', async () => {
+        // 0. Mock startup reset of stuck messages (startWorker's initial db.run)
+        db.run.mockImplementationOnce((query, params, cb) => cb(null));
+
         // 1. Mock Rate Limit
         db.get.mockImplementationOnce((query, cb) => cb(null, { value: '10' })); // Max TPS
 
@@ -38,7 +43,10 @@ describe('Worker Queue', () => {
         const mockMsg = { id: 1, phone_number: '+1234567890', template_name: 'hello', status: 'queued', retry_count: 0, max_retries: 2 };
         db.get.mockImplementationOnce((query, params, cb) => cb(null, mockMsg));
 
-        // 3. Mock Optimistic Lock (Update)
+        // 3. Mock Blacklist Check — contact is NOT blacklisted (returns null row)
+        db.get.mockImplementationOnce((query, params, cb) => cb(null, null));
+
+        // 4. Mock Optimistic Lock (Update)
         // db.run for UPDATE returns this.changes = 1
         db.run.mockImplementationOnce((query, params, cb) => {
             // context 'this' needs to have changes property
@@ -85,15 +93,51 @@ describe('Worker Queue', () => {
         );
     });
 
-    it('should skip message if race condition detected (lock failed)', async () => {
+    it('should back off without sending when blacklist lookup fails (fail-closed)', async () => {
+        // 0. Mock startup reset of stuck messages (startWorker's initial db.run)
+        db.run.mockImplementationOnce((query, params, cb) => cb(null));
+
         // 1. Mock Rate Limit
         db.get.mockImplementationOnce((query, cb) => cb(null, { value: '10' }));
 
         // 2. Mock Fetch Message
-        const mockMsg = { id: 2, status: 'queued' };
+        const mockMsg = { id: 3, phone_number: '+5551234567', status: 'queued' };
         db.get.mockImplementationOnce((query, params, cb) => cb(null, mockMsg));
 
-        // 3. Mock Lock Failure (changes = 0)
+        // 3. Mock Blacklist Check — database error (e.g. SQLITE_BUSY)
+        db.get.mockImplementationOnce((query, params, cb) => cb(new Error('SQLITE_BUSY')));
+
+        worker.startWorker(mockIo);
+        await new Promise(resolve => process.nextTick(resolve));
+
+        // Must NOT attempt to send the message
+        expect(whatsappService.sendMessage).not.toHaveBeenCalled();
+        // db.run is called once (startup reset) but must NOT be called for message locking
+        expect(db.run).toHaveBeenCalledTimes(1);
+        expect(db.run).toHaveBeenCalledWith(
+            expect.stringContaining("status='queued' WHERE status='processing'"),
+            expect.any(Array),
+            expect.any(Function)
+        );
+        // Should schedule a retry via setTimeout (POLL_INTERVAL backoff)
+        expect(global.setTimeout).toHaveBeenCalled();
+    });
+
+    it('should skip message if race condition detected (lock failed)', async () => {
+        // 0. Mock startup reset of stuck messages (startWorker's initial db.run)
+        db.run.mockImplementationOnce((query, params, cb) => cb(null));
+
+        // 1. Mock Rate Limit
+        db.get.mockImplementationOnce((query, cb) => cb(null, { value: '10' }));
+
+        // 2. Mock Fetch Message
+        const mockMsg = { id: 2, phone_number: '+9876543210', status: 'queued' };
+        db.get.mockImplementationOnce((query, params, cb) => cb(null, mockMsg));
+
+        // 3. Mock Blacklist Check — contact is NOT blacklisted (returns null row)
+        db.get.mockImplementationOnce((query, params, cb) => cb(null, null));
+
+        // 4. Mock Lock Failure (changes = 0)
         db.run.mockImplementationOnce((query, params, cb) => {
             cb.call({ changes: 0 }, null); // Lock failed!
         });

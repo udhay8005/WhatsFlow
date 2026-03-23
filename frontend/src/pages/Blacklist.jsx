@@ -21,6 +21,8 @@ export default function Blacklist() {
     const [newPhone, setNewPhone] = useState('');
     const [reason, setReason] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+    /** @type {[string|null, Function]} Phone number pending unblock confirmation */
+    const [confirmDelete, setConfirmDelete] = useState(null);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchBlacklist(); }, []);
@@ -60,11 +62,16 @@ export default function Blacklist() {
         }
     };
 
-    const handleDelete = async (phone) => {
-        if (!window.confirm(`Unblock ${phone}?`)) return;
+    const handleDelete = (phone) => {
+        setConfirmDelete(phone);
+    };
+
+    const confirmUnblock = async () => {
+        const phone = confirmDelete;
+        setConfirmDelete(null);
         try {
             await apiService.removeFromBlacklist(phone);
-            addToast('Number unblocked', 'success');
+            addToast('Number removed from blacklist', 'success');
             fetchBlacklist();
         } catch {
             addToast('Failed to unblock number', 'error');
@@ -172,6 +179,31 @@ export default function Blacklist() {
                     </table>
                 </div>
             </div>
+            {/* Inline Unblock Confirmation */}
+            {confirmDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Unblock Number?</h3>
+                        <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">
+                            Remove <span className="font-mono font-medium text-gray-900 dark:text-white">{confirmDelete}</span> from the blacklist? They will be able to receive messages again.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmUnblock}
+                                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors"
+                            >
+                                Unblock
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

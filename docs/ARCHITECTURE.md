@@ -28,9 +28,13 @@ WhatsFlow is a desktop application for sending bulk WhatsApp messages via the Wh
 
 ### Key Features
 - **Bulk Messaging:** Send messages to multiple contacts using approved templates
-- **Contact Management:** Import contacts via Excel/CSV
+- **Contact Management:** Import contacts via Excel/CSV with standardised 5-column format
+  (`phone`, `email`, `name`, `amount`, `date`)
 - **Campaign Tracking:** Real-time progress monitoring
-- **Template Support:** Dynamic parameter substitution
+- **Template Support:** Dynamic parameter substitution — consistent variable convention:
+  `{{1}}`=name, `{{2}}`=amount (or auto-built donation table for Multiple templates), `{{3}}`=date
+- **Duplicate Handling Modes:** `Separate Messages` (keep), `Combine List` (list), `Sum Total` (sum)
+  — controlled by `contactProcessor.ts` before campaign creation
 - **Media Uploads:** Support for images and videos
 - **Email Fallback:** Automatic email notifications on failures
 - **Webhook Integration:** Receive delivery status updates
@@ -81,6 +85,7 @@ WhatsFlow is a desktop application for sending bulk WhatsApp messages via the Wh
 │  │  ┌──────────────────────────────────────────┐ │    │
 │  │  │         React Application (UI)           │ │    │
 │  │  │  - Dashboard, Campaigns, History         │ │    │
+│  │  │  - Blacklist, Settings                   │ │    │
 │  │  └──────────────────────────────────────────┘ │    │
 │  │  ┌──────────────────────────────────────────┐ │    │
 │  │  │         Socket.IO Client                 │ │    │
@@ -185,7 +190,7 @@ Development: npm run start:prod
 | **Vitest** | 4.x | Frontend unit testing (Vite-native) |
 | **Concurrently** | 9.x | Run multiple npm scripts in parallel |
 
-**Test counts (current):** Backend — 13 suites, 59 tests passing. Frontend — 3 suites, 26 tests passing.
+**Test counts (current):** Backend — 13 suites, 60 tests passing. Frontend — 3 suites, 26 tests passing.
 
 ---
 
@@ -202,8 +207,9 @@ Development: npm run start:prod
 - Start message queue worker
 - Schedule cron jobs
 - Serve frontend in production
-- EADDRINUSE error handling (graceful log, no crash)
+- EADDRINUSE error handling (logs error + `process.exit(1)` — prevents ghost instances)
 - SPA catch-all route (React Router support for all paths)
+- Publishes `process.env.WHATSFLOW_UPLOADS_DIR` so media.js and settings.js share a single canonical uploads path
 
 **Key Middleware:**
 ```javascript
@@ -232,16 +238,22 @@ app.use('/api/', apiLimiter)
 #### 4.2 Database (`backend/database.js`)
 **Technology:** SQLite with WAL (Write-Ahead Logging) mode
 
+**Dual-connection architecture:**
+- `db` — shared reader connection used by worker, stats, settings, and contacts routes.
+- `dbWriter` — dedicated writer connection used exclusively by `routes/campaigns.js` for `BEGIN/COMMIT/ROLLBACK` transactions. Exported as `module.exports.dbWriter`. Prevents cross-request transaction bleeding where unrelated writes from the worker are absorbed into an open campaign transaction and rolled back with it.
+
 **Configuration:**
-- **Location:** `./database.sqlite`
-- **Mode:** WAL (improves concurrent read/write performance)
-- **Encryption:** AES-256-CBC for sensitive config values
+- **Location (development):** `database.test.sqlite` (tests) or `<project-root>/database.sqlite` (local dev)
+- **Location (packaged app):** `app.getPath('userData')` — e.g. `C:\Users\<name>\AppData\Roaming\WhatsFlow\database.sqlite`. Avoids `EPERM` in read-only install directories.
+- **Mode:** WAL — multiple concurrent readers, one writer
+- **PRAGMAs (both connections):** `journal_mode = WAL`, `foreign_keys = ON`, `busy_timeout = 5000` (waits up to 5 s for write locks instead of throwing `SQLITE_BUSY` immediately)
 
 **Schema:**
-- `app_config` - Application settings (encrypted)
-- `campaigns` - Campaign metadata
-- `messages` - Individual message records
-- `contacts` - Imported contact list (transient)
+- `app_config` — Application settings (sensitive values encrypted with AES-256-GCM)
+- `campaigns` — Campaign metadata
+- `messages` — Individual message records with status lifecycle
+- `contacts` — Phone/email registry with `UNIQUE(phone_number)` constraint
+- `blacklist` — Blocked phone numbers
 
 #### 4.3 Routes
 
@@ -260,8 +272,9 @@ app.use('/api/', apiLimiter)
 ##### `/api/campaigns` - Campaign Management
 - **GET `/`:** List all campaigns
 - **GET `/templates`:** Fetch WhatsApp templates (returns `200 + { data: [], status: 'unconfigured' }` when credentials are absent)
-- **POST `/`:** Create new campaign (bulk insert)
+- **POST `/`:** Create new campaign — wrapped in `withWriteLock` mutex and `dbWriter` transaction to prevent concurrent campaign creation conflicts
 - **PATCH `/:id/status`:** Toggle campaign active/paused
+- **PUT `/:id`:** Update existing campaign — uses `ON CONFLICT(phone_number) DO UPDATE SET email` to upsert contacts (preserving updated emails)
 
 ##### `/api/media` - Media Uploads
 - **POST `/upload`:** Upload image/video to WhatsApp
@@ -295,9 +308,12 @@ Authentication: Bearer {access_token}
 ##### `cryptoService.js`
 **Purpose:** Encrypt/decrypt sensitive config (tokens, passwords)
 
-**Algorithm:** AES-256-CBC
-**Key Derivation:** PBKDF2 with SHA256
-**Storage:** Encrypted values stored in `app_config.value`
+**Algorithm:** AES-256-GCM (authenticated encryption — detects tampering)
+**Key management:**
+- Primary: Electron `safeStorage` (OS-level credential store, used when available)
+- Fallback: AES-256-GCM with a per-installation 32-byte random key stored as `encryption.key` in the user data directory. Key file creation is atomic (write to `.tmp` + `fs.renameSync`). Corrupted keys (wrong byte length) are auto-detected, deleted, and regenerated.
+- Legacy: `DEV_ENC:` Base64 prefix (read-only — values are decrypted and re-encrypted on next save)
+**Format:** `AES_ENC:<iv_hex>:<authTag_hex>:<ciphertext_b64>`
 
 #### 4.5 Worker (`backend/worker.js`)
 **Purpose:** Background message queue processor
@@ -305,12 +321,14 @@ Authentication: Bearer {access_token}
 **Flow:**
 1. Poll database for `queued` messages
 2. Check rate limit (TPS from config)
+2a. Check blacklist (fail-closed — a database error backs off rather than assuming safe)
 3. Send via `whatsappService.sendMessage()`
 4. Update status: `processing` → `sent` or `failed`
+4a. Network calls wrapped with `withTimeout(30 000 ms)` — prevents hung API connections from stalling the worker indefinitely
 5. On failure: Attempt email fallback
 6. Repeat every 1 second
 
-**Concurrency:** Single-threaded sequential processing
+**Concurrency:** Single-threaded sequential processing; campaign creation transactions serialised by `withWriteLock` Promise-chain mutex on `dbWriter`
 **Rate Limiting:** Configurable 1-100 TPS
 
 #### 4.6 Cron (`backend/cron.js`)
@@ -463,8 +481,9 @@ body('contacts.*.phone').matches(/^\+[1-9]\d{1,14}$/), // E.164 format
 
 ### 6.5 Credential Encryption
 **Storage:** All tokens/passwords encrypted before DB storage
-**Algorithm:** AES-256-CBC
-**Key:** 32-byte key derived from environment-specific salt
+**Algorithm:** AES-256-GCM (primary: Electron safeStorage; fallback: per-installation key file)
+**Key storage:** `encryption.key` in `app.getPath('userData')` — never in the install directory
+**Storage:** Encrypted values stored in `app_config.value`
 
 ### 6.6 CORS Policy
 **Production:** Disabled (Electron app, no cross-origin requests)
@@ -650,6 +669,9 @@ while the modular codebase allows for future scaling if needed.
 - Security-first design (encryption, raw-body HMAC validation)
 - Runtime tunnel management without server restarts
 - Real-time user feedback via Socket.IO
-- Comprehensive test coverage (59 backend + 26 frontend tests passing)
+- Comprehensive test coverage (60 backend + 26 frontend tests passing)
+- Standardised template variable convention (`{{1}}`=name, `{{2}}`=amount/table, `{{3}}`=date)
+  means one Excel contact sheet works for all 8 supported template types
+- React inline modal pattern (no `window.confirm()`) for all destructive confirmations
 
 **For detailed usage instructions, see [USER_GUIDE.md](./USER_GUIDE.md)**

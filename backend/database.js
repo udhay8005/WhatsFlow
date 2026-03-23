@@ -12,10 +12,15 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const logger = require('./utils/logger');
 
-// Determine database path
+// Determine database path.
+// In production the Electron main process sets WHATSFLOW_USER_DATA to
+// app.getPath('userData') (e.g. C:\Users\<user>\AppData\Roaming\WhatsFlow).
+// This keeps the database out of the read-only installation directory and
+// prevents SQLITE_READONLY / SQLITE_CANTOPEN errors on Windows.
+const dbDir = process.env.WHATSFLOW_USER_DATA || path.resolve(__dirname, '..');
 const dbPath = process.env.NODE_ENV === 'test'
     ? path.resolve(__dirname, '../database.test.sqlite')
-    : path.resolve(__dirname, '../database.sqlite');
+    : path.join(dbDir, 'database.sqlite');
 logger.info('Connecting to database at ' + dbPath);
 
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -23,13 +28,43 @@ const db = new sqlite3.Database(dbPath, (err) => {
         logger.error('DB connection error:', err.message);
         process.exit(1); // Fatal error
     } else {
-        logger.info('Connected to SQLite database');
+        logger.info('Connected to SQLite database (reader)');
         // Enable WAL mode for better concurrent performance
         db.run('PRAGMA journal_mode = WAL', (err) => {
             if (err) logger.error('WAL enable failed:', err);
             else logger.info('WAL mode enabled');
         });
+        // Enforce foreign key constraints (SQLite disables them by default).
+        // Must be set per-connection — required for ON DELETE CASCADE to work.
+        db.run('PRAGMA foreign_keys = ON', (err) => {
+            if (err) logger.error('Foreign key enforcement failed:', err);
+            else logger.info('Foreign key enforcement enabled');
+        });
+        // Wait up to 5s for write locks instead of failing immediately with
+        // SQLITE_BUSY when the dbWriter connection holds a transaction lock.
+        db.run('PRAGMA busy_timeout = 5000');
         initializeSchema();
+    }
+});
+
+// Dedicated writer connection for multi-statement transactions (BEGIN/COMMIT).
+// The main `db` connection is shared by the whole app for reads and lightweight
+// single-statement writes (worker status updates, blacklist inserts, etc.).
+//
+// Without a separate connection, an async transaction that yields the event loop
+// (await in a for-loop) lets queries from other code paths (worker.js, stats)
+// execute inside the open transaction on the shared connection. If that
+// transaction rolls back, the unrelated writes are silently reverted — e.g. a
+// message marked 'sent' by the worker is rolled back to 'queued', causing a
+// duplicate WhatsApp send on the next poll cycle.
+const dbWriter = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        logger.error('Writer DB connection error:', err.message);
+    } else {
+        logger.info('Connected to SQLite database (writer)');
+        dbWriter.run('PRAGMA journal_mode = WAL');
+        dbWriter.run('PRAGMA foreign_keys = ON');
+        dbWriter.run('PRAGMA busy_timeout = 5000');
     }
 });
 
@@ -134,13 +169,18 @@ function initializeSchema() {
     });
 }
 
-// Graceful shutdown
+// Graceful shutdown — close writer first (it may hold an active transaction),
+// then the reader, then exit.
 process.on('SIGINT', () => {
-    db.close((err) => {
-        if (err) logger.error('Error closing database:', err);
-        else logger.info('Database connection closed');
-        process.exit(0);
+    dbWriter.close((err) => {
+        if (err) logger.error('Error closing writer connection:', err);
+        db.close((err2) => {
+            if (err2) logger.error('Error closing reader connection:', err2);
+            else logger.info('Database connections closed');
+            process.exit(0);
+        });
     });
 });
 
 module.exports = db;
+module.exports.dbWriter = dbWriter;

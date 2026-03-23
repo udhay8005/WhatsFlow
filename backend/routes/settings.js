@@ -18,6 +18,7 @@ const { validateSettings } = require('../middleware/validators');
 const { getTunnelUrl, isTunnelActive } = require('../tunnelManager');
 const rateLimit = require('express-rate-limit');
 const logger = require('../utils/logger');
+const { asyncHandler } = require('../middleware/errorHandler');
 
 // Strict limit for settings updates (5 attempts per minute)
 const settingsLimiter = rateLimit({
@@ -33,7 +34,7 @@ router.get('/config', (req, res) => {
         'wa_access_token', 'wa_phone_id', 'wa_waba_id',
         'wa_app_secret', 'webhook_verify_token',
         'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure',
-        'smtp_from_email', 'max_tps'
+        'smtp_from_email', 'smtp_from_name', 'email_fallback_subject', 'max_tps'
     ];
     const status = {};
 
@@ -47,13 +48,17 @@ router.get('/config', (req, res) => {
             status[key] = existingKeys.has(key);
         });
 
-        // Special handling for max_tps: return actual value
-        const tpsRow = rows.find(r => r.key === 'max_tps');
-        if (tpsRow) {
-            status.max_tps = cryptoService.decrypt(tpsRow.value);
-        } else {
-            status.max_tps = '1'; // Default
-        }
+        // Return actual (decrypted) values for non-secret settings
+        const plainValueKeys = {
+            max_tps: '5',
+            smtp_from_email: '',
+            smtp_from_name: '',
+            email_fallback_subject: ''
+        };
+        Object.entries(plainValueKeys).forEach(([key, defaultVal]) => {
+            const row = rows.find(r => r.key === key);
+            status[key] = row ? cryptoService.decrypt(row.value) : defaultVal;
+        });
 
         res.json({ configured: status });
     });
@@ -74,6 +79,8 @@ router.post('/config', validateSettings, (req, res) => {
         'smtp_pass',
         'smtp_secure',
         'smtp_from_email',
+        'smtp_from_name',
+        'email_fallback_subject',
         'max_tps'
     ];
 
@@ -88,20 +95,54 @@ router.post('/config', validateSettings, (req, res) => {
         return res.status(400).json({ error: "No valid settings provided to update." });
     }
 
-    const stmt = db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)");
+    // ── Phase 1: Encrypt all values BEFORE touching the database. ──────────
+    // cryptoService.encrypt() may throw (e.g. AES key unavailable). If this
+    // happened inside db.serialize(), the exception would escape the callback
+    // after BEGIN TRANSACTION was queued but before COMMIT, leaving the
+    // transaction permanently open and locking the database.
+    const encryptedEntries = [];
+    try {
+        for (const [key, val] of Object.entries(updates)) {
+            if (val === null || val === '') {
+                encryptedEntries.push({ key, encrypted: null }); // marks for DELETE
+            } else {
+                encryptedEntries.push({ key, encrypted: cryptoService.encrypt(String(val)) });
+            }
+        }
+    } catch (encErr) {
+        return res.status(500).json({ error: 'Encryption failed: ' + encErr.message });
+    }
 
-    const encryptAndSave = (key, val) => {
-        if (val === null || val === '') return;
-        const encrypted = cryptoService.encrypt(String(val));
-        stmt.run(key, encrypted);
-    };
+    // ── Phase 2: Write pre-encrypted values inside a transaction. ────────
+    // Every stmt.run() receives an error callback so failures are captured
+    // rather than silently swallowed (sqlite3 discards errors from runs
+    // without callbacks). The COMMIT callback aggregates any write errors.
+    const stmtUpsert = db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)");
+    const stmtDelete = db.prepare("DELETE FROM app_config WHERE key = ?");
+    const writeErrors = [];
 
     db.serialize(() => {
         db.run("BEGIN TRANSACTION");
-        Object.entries(updates).forEach(([key, val]) => encryptAndSave(key, val));
-        db.run("COMMIT", (err) => {
-            stmt.finalize();
-            if (err) return res.status(500).json({ error: err.message });
+
+        for (const entry of encryptedEntries) {
+            if (entry.encrypted === null) {
+                stmtDelete.run(entry.key, (err) => {
+                    if (err) writeErrors.push(err.message);
+                });
+            } else {
+                stmtUpsert.run(entry.key, entry.encrypted, (err) => {
+                    if (err) writeErrors.push(err.message);
+                });
+            }
+        }
+
+        db.run("COMMIT", (commitErr) => {
+            stmtUpsert.finalize();
+            stmtDelete.finalize();
+            if (commitErr || writeErrors.length > 0) {
+                const msg = commitErr ? commitErr.message : writeErrors.join('; ');
+                return res.status(500).json({ error: 'Database write failed: ' + msg });
+            }
             res.json({ success: true, message: "Settings saved securely." });
         });
     });
@@ -109,7 +150,7 @@ router.post('/config', validateSettings, (req, res) => {
 
 // POST /api/settings/test-smtp
 // Test SMTP connection with provided credentials
-router.post('/test-smtp', async (req, res) => {
+router.post('/test-smtp', asyncHandler(async (req, res) => {
     const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure } = req.body;
 
     if (!smtp_host || !smtp_user || !smtp_pass) {
@@ -139,7 +180,7 @@ router.post('/test-smtp', async (req, res) => {
             error: 'SMTP connection failed: ' + error.message
         });
     }
-});
+}));
 
 // GET /api/settings/tunnel
 // Returns current tunnel status + saved subdomain from db (or env fallback)
@@ -166,7 +207,7 @@ router.get('/tunnel', (req, res) => {
 // POST /api/settings/tunnel/start
 // Starts the LocalTunnel at runtime (no server restart needed).
 // Subdomain priority: request body → database → env var → random
-router.post('/tunnel/start', async (req, res) => {
+router.post('/tunnel/start', asyncHandler(async (req, res) => {
     try {
         const { startTunnel, isTunnelActive } = require('../tunnelManager');
         if (isTunnelActive()) {
@@ -198,11 +239,11 @@ router.post('/tunnel/start', async (req, res) => {
         logger.error('Failed to start tunnel via API:', error.message);
         res.status(500).json({ success: false, error: 'Failed to start tunnel: ' + error.message });
     }
-});
+}));
 
 // POST /api/settings/tunnel/stop
 // Stops the active LocalTunnel
-router.post('/tunnel/stop', async (req, res) => {
+router.post('/tunnel/stop', asyncHandler(async (req, res) => {
     try {
         const { stopTunnel } = require('../tunnelManager');
         await stopTunnel();
@@ -212,7 +253,7 @@ router.post('/tunnel/stop', async (req, res) => {
         logger.error('Failed to stop tunnel via API:', error.message);
         res.status(500).json({ success: false, error: 'Failed to stop tunnel: ' + error.message });
     }
-});
+}));
 
 // POST /api/settings/clear-history
 // Deletes all campaigns and messages
@@ -252,7 +293,13 @@ router.post('/clear-logs', (req, res) => {
     try {
         const fs = require('fs');
         const path = require('path');
-        const logsDir = path.join(__dirname, '../../backend/logs');
+        // Mirror the same directory resolution used by logger.js so both modules
+        // always operate on the same physical folder (AppData/logs in production,
+        // backend/logs in development). The previous path.join(__dirname, '../../backend/logs')
+        // was structurally brittle — it worked by accident and breaks if the directory is renamed.
+        const logsDir = process.env.WHATSFLOW_USER_DATA
+            ? path.join(process.env.WHATSFLOW_USER_DATA, 'logs')
+            : path.join(__dirname, '../logs');
 
         // Check if logs directory exists
         if (fs.existsSync(logsDir)) {
@@ -261,7 +308,12 @@ router.post('/clear-logs', (req, res) => {
 
             files.forEach(file => {
                 if (file.endsWith('.log')) {
-                    fs.unlinkSync(path.join(logsDir, file));
+                    // Truncate instead of delete — Winston holds log files open in
+                    // append mode while the server is running. On Windows, open files
+                    // are exclusively locked and fs.unlinkSync() throws EBUSY/EPERM.
+                    // Writing an empty string clears the content without touching the
+                    // file handle, which is safe on all platforms.
+                    fs.writeFileSync(path.join(logsDir, file), '');
                     cleared++;
                 }
             });
@@ -291,20 +343,22 @@ router.post('/clean-app', (req, res) => {
         const path = require('path');
         let actions = [];
 
-        // 1. Clear logs
-        const logsDir = path.join(__dirname, '../../backend/logs');
+        // 1. Clear logs — truncate, not delete (Winston holds files open on Windows)
+        const logsDir = process.env.WHATSFLOW_USER_DATA
+            ? path.join(process.env.WHATSFLOW_USER_DATA, 'logs')
+            : path.join(__dirname, '../logs');
         if (fs.existsSync(logsDir)) {
             const files = fs.readdirSync(logsDir);
             files.forEach(file => {
                 if (file.endsWith('.log')) {
-                    fs.unlinkSync(path.join(logsDir, file));
+                    fs.writeFileSync(path.join(logsDir, file), '');
                 }
             });
             actions.push('Cleared log files');
         }
 
         // 2. Remove temp upload files older than 24 hours
-        const uploadsDir = path.join(__dirname, '../../uploads');
+        const uploadsDir = process.env.WHATSFLOW_UPLOADS_DIR || path.join(__dirname, '../uploads');
         if (fs.existsSync(uploadsDir)) {
             const files = fs.readdirSync(uploadsDir);
             files.forEach(file => {

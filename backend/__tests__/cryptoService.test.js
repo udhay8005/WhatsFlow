@@ -8,7 +8,7 @@ describe('Crypto Service', () => {
 
             expect(encrypted).toBeTruthy();
             expect(encrypted).not.toBe(plainText);
-            expect(encrypted).toContain('DEV_ENC:'); // Development mode encryption
+            expect(encrypted).toContain('AES_ENC:'); // AES-256-GCM encryption (replaces insecure DEV_ENC Base64)
         });
 
         it('should return empty string for empty input', () => {

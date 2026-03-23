@@ -21,8 +21,8 @@ By combining the convenience of a desktop application with the power of a modern
 - **Smart Email Fallback:** Automatically switches to SMTP email delivery if WhatsApp delivery fails after maximum retry attempts.
 - **Real-time Analytics Dashboard:** Monitor message delivery statuses, read receipts, and campaign trends visually using Recharts with full dark/light mode support.
 - **Live Webhook Integration:** Integrates `localtunnel` to receive secure, real-time status updates (Sent, Delivered, Read, Failed) directly from Meta's webhooks, even while running on localhost.
-- **Excel Contact Import:** Seamlessly import and map contacts and variables from Excel/CSV files.
-- **Blacklist Management:** Block specific phone numbers from receiving future campaigns.
+- **Excel Contact Import:** Import contacts from Excel/CSV using a standardised 5-column format (`phone`, `email`, `name`, `amount`, `date`). One sheet covers all 8 supported template types — consistent variable convention (`{{1}}`=name, `{{2}}`=amount/table, `{{3}}`=date) means no column remapping between campaigns.
+- **Blacklist Management:** Block specific phone numbers from receiving future campaigns. Unblock via a React confirmation modal (no native browser dialogs).
 - **Enterprise-Grade Security:** Utilizes AES-256 encryption for sensitive API credentials and HMAC-SHA256 for webhook signature validation.
 - **Modern UI:** A responsive React 19 frontend built with Vite and Tailwind CSS, featuring full Dark/Light mode support with theme-aware charts.
 
@@ -50,7 +50,7 @@ WhatsFlow employs a hybrid process model, bundling a complete Client-Server arch
 
 ### Database (SQLite)
 - **WAL Mode:** Write-Ahead Logging for high concurrent read/write performance.
-- **Encryption:** AES-256-CBC for all sensitive config values stored in the database.
+- **Encryption:** AES-256-GCM (per-installation key) for all sensitive config values stored in the database.
 
 ---
 
@@ -83,8 +83,7 @@ whatsflow/
 ├── docs/                     # Extended documentation
 ├── tests/                    # E2E tests (Playwright)
 ├── .env.template             # Environment variable template
-├── .gitignore                # Comprehensive exclusion rules
-└── database.sqlite           # Local SQLite database (auto-generated)
+└── .gitignore                # Comprehensive exclusion rules
 ```
 
 ---
@@ -153,7 +152,7 @@ npm run build
 
 ## Security Posture
 
-- **Encryption at Rest:** All sensitive API tokens and SMTP passwords encrypted using AES-256-CBC before SQLite storage.
+- **Encryption at Rest:** All sensitive API tokens and SMTP passwords encrypted using AES-256-GCM (per-installation key, stored in user data directory) before SQLite storage.
 - **Webhook Integrity:** Incoming Meta webhooks verified via HMAC-SHA256 signatures against the configured App Secret.
 - **API Authentication:** Session-based X-API-Key required for all `/api/*` routes (issued by `/auth/token`).
 - **Input Validation:** All inputs validated via `express-validator` middleware to prevent injection attacks.
@@ -164,7 +163,7 @@ npm run build
 ## Support & Troubleshooting
 
 - **Application Logs:** Check `backend/logs/combined.log` and `backend/logs/error.log`.
-- **Port Conflicts:** If port 3000 is in use, the app logs the error gracefully — close other instances first.
+- **Port Conflicts:** If port 3000 is in use, the app logs the error and exits (`process.exit(1)`) — close other instances then relaunch.
 - **Database Locks:** Ensure no external SQLite viewers are locking `database.sqlite` while the worker is running.
 - **Webhook Failures:** Verify your `TUNNEL_SUBDOMAIN` is unique and not claimed by another user.
 

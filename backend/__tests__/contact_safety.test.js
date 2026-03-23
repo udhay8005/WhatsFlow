@@ -1,6 +1,7 @@
 const request = require('supertest');
 const express = require('express');
 const contactsRouter = require('../routes/contacts');
+const { errorHandler } = require('../middleware/errorHandler');
 
 // Mock Dependencies
 jest.mock('../database', () => {
@@ -41,6 +42,7 @@ describe('Contact Safety Tests', () => {
         app = express();
         app.use(express.json());
         app.use('/api/contacts', contactsRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     describe('POST /api/contacts/blacklist', () => {

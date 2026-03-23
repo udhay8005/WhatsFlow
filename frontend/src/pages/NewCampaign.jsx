@@ -67,6 +67,45 @@ export default function NewCampaign() {
     const [filterRange, setFilterRange] = useState({ start: '', end: '' });
     const [excludedRowIndices, setExcludedRowIndices] = useState(new Set()); // Indices to skip
 
+    // ─── Mapping Preset Helpers ──────────────────────────────────────────────────
+    /** Returns the localStorage key for a given template's saved mapping. */
+    const mappingKey = (name) => `whatsflow_mapping_${name}`;
+
+    /**
+     * Saves the current column mapping to localStorage under the selected template name.
+     */
+    const saveMapping = () => {
+        if (!templateId) { addToast('Select a template first', 'warning'); return; }
+        const preset = { phoneCol, emailCol, dateCol, duplicateMode, sumColumn, paramMappings };
+        localStorage.setItem(mappingKey(templateId), JSON.stringify(preset));
+        addToast(`Mapping saved for "${templateId}"`, 'success');
+    };
+
+    /**
+     * Loads the saved column mapping for the selected template from localStorage
+     * and applies it to the current state.
+     */
+    const loadMapping = () => {
+        if (!templateId) return;
+        const raw = localStorage.getItem(mappingKey(templateId));
+        if (!raw) { addToast('No saved mapping found for this template', 'warning'); return; }
+        try {
+            const preset = JSON.parse(raw);
+            if (preset.phoneCol !== undefined) setPhoneCol(preset.phoneCol);
+            if (preset.emailCol !== undefined) setEmailCol(preset.emailCol);
+            if (preset.dateCol !== undefined) setDateCol(preset.dateCol);
+            if (preset.duplicateMode) setDuplicateMode(preset.duplicateMode);
+            if (preset.sumColumn !== undefined) setSumColumn(preset.sumColumn);
+            if (preset.paramMappings) setParamMappings(preset.paramMappings);
+            addToast('Mapping loaded successfully', 'success');
+        } catch {
+            addToast('Failed to load saved mapping', 'error');
+        }
+    };
+
+    /** True if a saved mapping exists in localStorage for the currently selected template. */
+    const hasSavedMapping = templateId ? !!localStorage.getItem(mappingKey(templateId)) : false;
+
     // Validation State
     const [processedContacts, setProcessedContacts] = useState([]);
     const [summary, setSummary] = useState({ valid: 0, invalid: 0 });
@@ -442,6 +481,10 @@ export default function NewCampaign() {
                         filterType={filterType} setFilterType={setFilterType}
                         filterRange={filterRange} setFilterRange={setFilterRange}
                         excludedRowIndices={excludedRowIndices} setExcludedRowIndices={setExcludedRowIndices}
+                        // Mapping Preset Props
+                        onSaveMapping={saveMapping}
+                        onLoadMapping={loadMapping}
+                        hasSavedMapping={hasSavedMapping}
                     />
                 )}
 

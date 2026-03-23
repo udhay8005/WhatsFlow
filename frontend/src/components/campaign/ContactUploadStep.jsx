@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { Upload, FileSpreadsheet, X, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Upload, FileSpreadsheet, X, AlertTriangle, ShieldAlert, Bookmark } from 'lucide-react';
 import { apiService } from '../../services/api';
 
 export default function ContactUploadStep({
@@ -31,7 +31,11 @@ export default function ContactUploadStep({
     dateCol, setDateCol,
     filterType, setFilterType,
     filterRange, setFilterRange,
-    excludedRowIndices, setExcludedRowIndices
+    excludedRowIndices, setExcludedRowIndices,
+    // Mapping Preset Props
+    onSaveMapping,
+    onLoadMapping,
+    hasSavedMapping,
 }) {
     // Computing filtered rows for display
     const getFilteredRows = () => {
@@ -195,6 +199,36 @@ export default function ContactUploadStep({
                             </div>
                         </div>
                         <button onClick={() => setFile(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"><X size={20} /></button>
+                    </div>
+
+                    {/* Mapping Preset Bar */}
+                    <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                        <div className="flex items-center gap-2">
+                            <Bookmark size={15} className="text-indigo-500 flex-shrink-0" />
+                            <span className="text-sm text-indigo-800 dark:text-indigo-200 font-medium">
+                                {hasSavedMapping
+                                    ? 'Saved column mapping available for this template'
+                                    : 'No saved mapping yet — map columns below and save for next time'}
+                            </span>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0 ml-4">
+                            {hasSavedMapping && (
+                                <button
+                                    type="button"
+                                    onClick={onLoadMapping}
+                                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap"
+                                >
+                                    Load Mapping
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={onSaveMapping}
+                                className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap"
+                            >
+                                Save Mapping
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-8">

@@ -2,6 +2,7 @@ const request = require('supertest');
 const express = require('express');
 const crypto = require('crypto');
 const webhookRouter = require('../routes/webhook');
+const { errorHandler } = require('../middleware/errorHandler');
 
 // Mock dependencies
 jest.mock('../database', () => ({
@@ -37,6 +38,7 @@ describe('Webhook Routes', () => {
         mockIo = { emit: jest.fn() };
         app.set('io', mockIo);
         app.use('/webhook', webhookRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     afterEach(() => {

@@ -1,6 +1,7 @@
 const request = require('supertest');
 const express = require('express');
 const settingsRouter = require('../routes/settings');
+const { errorHandler } = require('../middleware/errorHandler');
 
 // Mock database
 jest.mock('../database', () => ({
@@ -25,6 +26,7 @@ describe('Settings API Routes', () => {
         app = express();
         app.use(express.json());
         app.use('/api/settings', settingsRouter);
+        app.use(errorHandler); // Catch asyncHandler forwarded errors
     });
 
     describe('GET /api/settings/config', () => {

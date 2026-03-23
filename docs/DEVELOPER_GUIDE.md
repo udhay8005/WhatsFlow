@@ -156,7 +156,6 @@ whatsflow/
 │       └── campaign_flow.spec.js
 │
 ├── .env.template               # Environment variable template
-├── database.sqlite             # Production database (WAL mode)
 ├── jest.config.js              # Jest configuration
 ├── package.json                # Root dependencies + electron-builder config
 └── README.md
@@ -218,6 +217,10 @@ npm start
 - Use semicolons
 - 4-space indentation
 - Single quotes for strings
+- **No `window.confirm()` or `window.alert()`** in frontend — use the `useToast()` hook for
+  notifications and an inline React modal overlay for destructive confirmations. Native browser
+  dialogs block the React update cycle. See `Blacklist.jsx` for the reference pattern
+  (`confirmDelete` state + Tailwind overlay with Cancel / Confirm buttons).
 
 **Naming Conventions:**
 ```javascript
@@ -361,10 +364,28 @@ db.get.mockImplementation((sql, params, cb) => {
 })
 ```
 
+> **Note:** If your route under test uses `db.dbWriter` (i.e. `routes/campaigns.js` or `routes/drafts.js`), you must also attach `dbWriter` to the mock:
+> ```javascript
+> jest.mock('../database', () => {
+>     const mockDb = {
+>         get: jest.fn(),
+>         run: jest.fn((sql, params, cb) => { if (cb) cb(null); }),
+>         all: jest.fn(),
+>     };
+>     mockDb.dbWriter = {
+>         get: jest.fn(),
+>         run: jest.fn((sql, params, cb) => { if (cb) cb(null); }),
+>         all: jest.fn(),
+>     };
+>     return mockDb;
+> });
+> ```
+> For `worker.test.js`, call `worker.stopWorker()` in `beforeEach` to reset the `isRunning` flag, and mock the startup `db.run("UPDATE messages SET status='queued'...")` call at the start of each test.
+
 ### Test Coverage Goals
 - **Target:** 70%+ overall
 - **Critical paths:** 90%+ (auth, payment, security)
-- **Current:** 70.3% ✅
+- **Current:** 70.3% ✅ — Backend: 13 suites, 60 tests. Frontend: 3 suites, 26 tests.
 
 ---
 
@@ -539,7 +560,11 @@ db.run(`CREATE TABLE IF NOT EXISTS my_table (
 
 2. **Delete old database:**
 ```powershell
+# Development: database is at project root
 Remove-Item database.sqlite
+
+# In packaged app: database is in user data directory
+# e.g. C:\Users\<name>\AppData\Roaming\WhatsFlow\database.sqlite
 ```
 
 3. **Restart backend** - new schema will be created
@@ -604,7 +629,7 @@ npm install
 
 #### Issue: Port 3000 already in use
 
-Port 3000 is already in use when starting packaged app -> error is logged gracefully (no crash dialog). Close other instances of WhatsFlow first.
+Port 3000 is already in use when starting packaged app → error is logged and the process exits cleanly (`process.exit(1)`). Close other instances of WhatsFlow, then relaunch.
 
 #### Issue: Database locked error
 **Solution:**

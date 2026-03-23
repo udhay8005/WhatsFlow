@@ -15,6 +15,69 @@ const router = express.Router();
 const db = require('../database');
 const logger = require('../utils/logger');
 const { validateCampaignCreation } = require('../middleware/validators');
+const { asyncHandler } = require('../middleware/errorHandler');
+
+// Dedicated writer connection for multi-statement transactions.
+// All BEGIN/INSERT/COMMIT work happens on this connection so that reads and
+// lightweight writes from worker.js, stats, etc. (which use the main `db`
+// connection) are completely isolated from the campaign transaction.
+// See database.js for the full rationale.
+const txnDb = db.dbWriter;
+
+/**
+ * @function dbRun
+ * @description Promisified wrapper for txnDb.run (the writer connection).
+ *              Resolves with the sqlite3 statement context (this.lastID / this.changes).
+ * @param {string} sql - SQL statement to execute.
+ * @param {any[]} [params=[]] - Bound parameters.
+ * @returns {Promise<object>} sqlite3 statement context (this.lastID, this.changes).
+ */
+function dbRun(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        txnDb.run(sql, params, function (err) {
+            if (err) reject(err);
+            else resolve(this);
+        });
+    });
+}
+
+/**
+ * @function dbGet
+ * @description Promisified wrapper for txnDb.get (the writer connection).
+ *              Resolves with the first matching row, or undefined if no row matches.
+ * @param {string} sql - SQL query.
+ * @param {any[]} [params=[]] - Bound parameters.
+ * @returns {Promise<object|undefined>} First matching row, or undefined.
+ */
+function dbGet(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        txnDb.get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+}
+
+// Application-level write-transaction mutex.
+// node-sqlite3 exposes a single shared connection object; if two async write
+// transactions run concurrently they both call BEGIN on that same connection and
+// the second one throws: SQLITE_ERROR: cannot start a transaction within a transaction.
+// This Promise-chain queue ensures only one write transaction is active at a time.
+let writeMutex = Promise.resolve();
+
+/**
+ * @function withWriteLock
+ * @description Serialises async write transactions on the shared SQLite connection.
+ *              Each call appends fn to a Promise chain; concurrent callers wait
+ *              until the previous operation resolves or rejects before proceeding.
+ * @param {function(): Promise<void>} fn - Async function to run under the lock.
+ * @returns {Promise<void>} Resolves or rejects with fn's result.
+ */
+function withWriteLock(fn) {
+    const result = writeMutex.then(() => fn());
+    writeMutex = result.then(() => {}, () => {}); // always advance chain on success or error
+    return result;
+}
 
 // GET /api/campaigns
 // List recent campaigns
@@ -32,7 +95,7 @@ router.get('/', (req, res) => {
 
 // GET /api/campaigns/templates
 // Fetch templates from Meta via Service
-router.get('/templates', async (req, res) => {
+router.get('/templates', asyncHandler(async (req, res) => {
     try {
         const templates = await require('../services/whatsappService').getTemplates();
         res.json({ data: templates });
@@ -48,7 +111,7 @@ router.get('/templates', async (req, res) => {
         }
         res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /api/campaigns/:id
 // Get details + message stats
@@ -70,10 +133,9 @@ router.get('/:id', (req, res) => {
 
 // POST /api/campaigns
 // Create a new campaign and enqueue messages
-router.post('/', validateCampaignCreation, (req, res) => {
+router.post('/', validateCampaignCreation, asyncHandler(async (req, res) => {
     // Body: { name, templateName, templateLanguage, contacts, mediaId, mediaType }
     const { name, templateName, templateLanguage = 'en_US', contacts = [], mediaId, mediaType } = req.body;
-
 
     // E.164 format: + followed by 1-15 digits
     const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -86,96 +148,60 @@ router.post('/', validateCampaignCreation, (req, res) => {
     }
 
     const io = req.app.get('io');
+    const status = req.body.status || 'active';
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    db.serialize(() => {
-        db.run("BEGIN TRANSACTION");
+    await withWriteLock(async () => {
+        try {
+            await dbRun("BEGIN");
 
-        const handleError = (err) => {
-            logger.error('Campaign creation failed:', err);
-            db.run("ROLLBACK");
-            res.status(500).json({ error: err.message });
-        };
+            // 1. Create Campaign
+            const campaignResult = await dbRun(
+                `INSERT INTO campaigns (name, template_name, template_language, total_count, status, scheduled_at, media_id, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [name, templateName || '', templateLanguage, contacts.length, status, req.body.scheduledAt || null, mediaId || null, mediaType || null]
+            );
+            const campaignId = campaignResult.lastID;
 
-        // 1. Create Campaign
-        const status = req.body.status || 'active';
-        db.run(
-            `INSERT INTO campaigns (name, template_name, template_language, total_count, status, scheduled_at, media_id, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [name, templateName || '', templateLanguage, contacts.length, status, req.body.scheduledAt || null, mediaId || null, mediaType || null],
-            function (err) {
-                if (err) return handleError(err);
+            // 2. Insert contacts and messages sequentially (SQLite single-writer)
+            let processed = 0;
+            for (const contact of contacts) {
+                let email = contact.email?.trim() || null;
+                if (email && !EMAIL_REGEX.test(email)) email = null;
+                const paramsJson = JSON.stringify(contact.params || []);
 
-                const campaignId = this.lastID;
-                const errors = [];
-                let processed = 0;
+                await dbRun(
+                    `INSERT INTO contacts (phone_number, email, email_opt_in)
+                     VALUES (?, ?, 1)
+                     ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email, email_opt_in=1`,
+                    [contact.phone, email]
+                );
 
-                // 2. Process Contacts sequentially (SQLite is single-writer)
-                const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                const row = await dbGet("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone]);
+                if (!row) throw new Error(`Contact not found after upsert: ${contact.phone}`);
 
-                const processOneContact = (contact) => {
-                    return new Promise((resolve, reject) => {
-                        let email = contact.email?.trim() || null;
-                        if (email && !EMAIL_REGEX.test(email)) email = null;
-                        const paramsJson = JSON.stringify(contact.params || []);
-
-                        // Upsert Contact
-                        db.run(
-                            `INSERT INTO contacts (phone_number, email, email_opt_in)
-                             VALUES (?, ?, 1)
-                             ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email, email_opt_in=1`,
-                            [contact.phone, email],
-                            (insertErr) => {
-                                if (insertErr) {
-                                    errors.push({ phone: contact.phone, error: insertErr.message });
-                                    return reject(insertErr);
-                                }
-
-                                // Lookup ID and Insert Message
-                                db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (getErr, row) => {
-                                    if (getErr || !row) return reject(getErr || new Error('Contact not found'));
-
-                                    db.run(
-                                        `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
-                                        [campaignId, row.id, contact.phone, paramsJson],
-                                        (msgErr) => {
-                                            if (msgErr) return reject(msgErr);
-                                            processed++;
-                                            resolve();
-                                        }
-                                    );
-                                });
-                            }
-                        );
-                    });
-                };
-
-                const processContacts = async () => {
-                    for (const contact of contacts) {
-                        await processOneContact(contact);
-                    }
-                };
-
-                processContacts()
-                    .then(() => {
-                        db.run("COMMIT", (commitErr) => {
-                            if (commitErr) return handleError(commitErr);
-
-                            io.emit('campaign_created', { id: campaignId, name });
-                            res.status(201).json({
-                                success: true,
-                                campaignId,
-                                message: `Campaign created with ${contacts.length} messages.`,
-                                processed,
-                                errors: errors.length > 0 ? errors : undefined
-                            });
-                        });
-                    })
-                    .catch((err) => {
-                        handleError(err);
-                    });
+                await dbRun(
+                    `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
+                    [campaignId, row.id, contact.phone, paramsJson]
+                );
+                processed++;
             }
-        );
+
+            await dbRun("COMMIT");
+
+            io.emit('campaign_created', { id: campaignId, name });
+            res.status(201).json({
+                success: true,
+                campaignId,
+                message: `Campaign created with ${contacts.length} messages.`,
+                processed
+            });
+        } catch (err) {
+            logger.error('Campaign creation failed:', err);
+            try { await dbRun("ROLLBACK"); } catch (_) { /* ignore secondary rollback error */ }
+            if (!res.headersSent) res.status(500).json({ error: err.message });
+        }
     });
-});
+}));
 
 // POST /api/campaigns/:id/pause
 router.post('/:id/pause', (req, res) => {
@@ -235,74 +261,52 @@ router.put('/:id', (req, res) => {
         return;
     }
 
-    // Full Update (Re-create messages) — sequential writes for SQLite safety
+    // Full Update (Re-create messages) — pure async/await transaction, no db.serialize()
     if (contacts) {
         const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        db.serialize(() => {
-            db.run("BEGIN TRANSACTION");
+        withWriteLock(async () => {
+            try {
+                await dbRun("BEGIN");
 
-            // 1. Update Campaign
-            db.run(
-                `UPDATE campaigns SET name=?, template_name=?, template_language=?, total_count=?, status=?, scheduled_at=?, media_id=?, media_type=? WHERE id=?`,
-                [name, templateName, templateLanguage, contacts.length, status || 'active', scheduledAt || null, mediaId || null, mediaType || null, campaignId],
-                function (err) {
-                    if (err) {
-                        db.run("ROLLBACK");
-                        return res.status(500).json({ error: err.message });
-                    }
+                // 1. Update Campaign
+                await dbRun(
+                    `UPDATE campaigns SET name=?, template_name=?, template_language=?, total_count=?, status=?, scheduled_at=?, media_id=?, media_type=? WHERE id=?`,
+                    [name, templateName, templateLanguage, contacts.length, status || 'active', scheduledAt || null, mediaId || null, mediaType || null, campaignId]
+                );
 
-                    // 2. Delete Old Messages
-                    db.run("DELETE FROM messages WHERE campaign_id = ?", [campaignId], async (delErr) => {
-                        if (delErr) {
-                            db.run("ROLLBACK");
-                            return res.status(500).json({ error: "Failed to clear old messages" });
-                        }
+                // 2. Delete Old Messages
+                await dbRun("DELETE FROM messages WHERE campaign_id = ?", [campaignId]);
 
-                        // 3. Insert New Messages sequentially
-                        try {
-                            for (const contact of contacts) {
-                                await new Promise((resolve, reject) => {
-                                    let email = contact.email?.trim() || null;
-                                    if (email && !EMAIL_REGEX.test(email)) email = null;
-                                    const paramsJson = JSON.stringify(contact.params || []);
+                // 3. Insert New Messages sequentially
+                for (const contact of contacts) {
+                    let email = contact.email?.trim() || null;
+                    if (email && !EMAIL_REGEX.test(email)) email = null;
+                    const paramsJson = JSON.stringify(contact.params || []);
 
-                                    db.run(
-                                        `INSERT OR IGNORE INTO contacts (phone_number, email) VALUES (?, ?)`,
-                                        [contact.phone, email],
-                                        function (upsertErr) {
-                                            if (upsertErr) return reject(upsertErr);
-                                            db.get("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone], (getErr, row) => {
-                                                if (getErr) return reject(getErr);
-                                                const contactId = row ? row.id : null;
-                                                db.run(
-                                                    `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
-                                                    [campaignId, contactId, contact.phone, paramsJson],
-                                                    (msgErr) => {
-                                                        if (msgErr) reject(msgErr);
-                                                        else resolve();
-                                                    }
-                                                );
-                                            });
-                                        }
-                                    );
-                                });
-                            }
+                    await dbRun(
+                        `INSERT INTO contacts (phone_number, email, email_opt_in)
+                         VALUES (?, ?, 1)
+                         ON CONFLICT(phone_number) DO UPDATE SET email=excluded.email, email_opt_in=1`,
+                        [contact.phone, email]
+                    );
 
-                            db.run("COMMIT", (commitErr) => {
-                                if (commitErr) {
-                                    db.run("ROLLBACK");
-                                    return res.status(500).json({ error: commitErr.message });
-                                }
-                                res.json({ success: true, id: campaignId, message: "Campaign updated" });
-                            });
-                        } catch (insertErr) {
-                            db.run("ROLLBACK");
-                            res.status(500).json({ error: insertErr.message });
-                        }
-                    });
+                    const row = await dbGet("SELECT id FROM contacts WHERE phone_number = ?", [contact.phone]);
+                    const contactId = row ? row.id : null;
+
+                    await dbRun(
+                        `INSERT INTO messages (campaign_id, contact_id, phone_number, variable_data, status) VALUES (?, ?, ?, ?, 'queued')`,
+                        [campaignId, contactId, contact.phone, paramsJson]
+                    );
                 }
-            );
+
+                await dbRun("COMMIT");
+                res.json({ success: true, id: campaignId, message: "Campaign updated" });
+            } catch (err) {
+                logger.error('Campaign update failed:', err);
+                try { await dbRun("ROLLBACK"); } catch (_) { /* ignore secondary rollback error */ }
+                if (!res.headersSent) res.status(500).json({ error: err.message });
+            }
         });
         return;
     }

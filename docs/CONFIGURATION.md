@@ -184,7 +184,7 @@ You cannot use your regular Gmail password directly. You must create an "App Pas
 
 #### SMTP Password
 **Type:** String (encrypted in storage)
-**Security:** Encrypted with AES-256-CBC before saving
+**Security:** Encrypted with AES-256-GCM before saving
 
 ---
 
@@ -283,7 +283,7 @@ Without `TUNNEL_SUBDOMAIN`, a random subdomain is assigned on every start.
 **Location:** Settings → Worker → TPS (Transactions Per Second)
 **Type:** Integer
 **Range:** 1 - 100
-**Default:** 5
+**Default:** 5 (conservative starting value; increase as needed)
 **Recommended:**
 - Testing: 1-5 TPS
 - Light use: 10-20 TPS
@@ -389,9 +389,9 @@ best-effort — the subdomain is not permanently reserved. See Section 3 for det
 - `webhook_verify_token`
 - `smtp_password`
 
-**Algorithm:** AES-256-CBC
-**Key Derivation:** PBKDF2 with SHA256
-**Storage:** Database column `app_config.value`
+**Algorithm:** AES-256-GCM (authenticated encryption — detects data tampering)
+**Key management:** Per-installation 32-byte random key stored as `encryption.key` in the user data directory (`app.getPath('userData')`). Electron `safeStorage` is used as the primary store where available. The key file is created atomically and auto-regenerated if corrupted.
+**Storage:** Database column `app_config.value`; format: `AES_ENC:<iv_hex>:<authTag_hex>:<ciphertext_b64>`
 
 **Implementation:**
 ```javascript
@@ -460,13 +460,12 @@ with `400 Bad Request`.
 
 ### Path
 
-**Location:** `./database.sqlite` (project root in dev; app data directory in installed app)
+**Location:**
+- **Development:** `<project-root>/database.sqlite`
+- **Packaged app:** `%APPDATA%\WhatsFlow\database.sqlite` (i.e. `app.getPath('userData')`)
+  This is set via `process.env.WHATSFLOW_USER_DATA` which `electron/main.js` publishes before requiring the backend.
 
-**Change path:**
-```javascript
-// In backend/database.js
-const dbPath = path.join(__dirname, '../custom_path/database.sqlite')
-```
+> Do not attempt to find the database in the install directory (`C:\Program Files\WhatsFlow\`) — it is read-only. All mutable state (database, logs, uploads, encryption key) lives in the user data directory.
 
 ---
 
